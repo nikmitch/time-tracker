@@ -88,11 +88,11 @@ def _prompt_entry_fields(
     def _pick_or_type(prompt: str, existing: list[str], current: str | None) -> str | None:
         if current is not None:
             return current or None
-        choices = existing + ([NEW] if existing else []) + [SKIP]
+        choices = existing + [NEW, SKIP]
         chosen = questionary.select(prompt, choices=choices).ask()
         if chosen is None or chosen == SKIP:
             return None
-        if chosen == NEW or not existing:
+        if chosen == NEW:
             typed = questionary.text(f"Enter {prompt.lower().rstrip(':')}:").ask()
             return typed.strip() or None
         return chosen
