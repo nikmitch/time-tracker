@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Time Tracker — Design Document</title>
+<style>
+  :root {
+    --bg: #fafafa; --fg: #1f2430; --muted: #5c6370; --accent: #3b6ea5;
+    --card: #ffffff; --border: #e2e5ea; --code-bg: #f3f4f6; --ok: #2e7d32; --future: #8a6d3b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.6; color: var(--fg); background: var(--bg); margin: 0; padding: 0;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+  h1 { font-size: 2rem; margin-bottom: 4px; }
+  h2 { font-size: 1.4rem; margin-top: 2.2rem; border-bottom: 2px solid var(--border); padding-bottom: 6px; }
+  h3 { font-size: 1.1rem; margin-top: 1.6rem; color: var(--accent); }
+  .sub { color: var(--muted); margin-top: 0; }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 0.88em; }
+  pre { background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto; border: 1px solid var(--border); }
+  pre code { background: none; padding: 0; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--code-bg); }
+  .tag { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
+  .tag.mvp { background: #e3f2e6; color: var(--ok); }
+  .tag.future { background: #fdf3e0; color: var(--future); }
+  ul.phases { list-style: none; padding-left: 0; }
+  ul.phases > li { background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 8px; padding: 14px 18px; margin: 10px 0; }
+  .phase-title { font-weight: 700; }
+  .tests { background: #f7f9fc; border-radius: 6px; padding: 8px 12px; margin-top: 8px; font-size: 0.9rem; }
+  .tests strong { color: var(--ok); }
+  .ascii { font-family: ui-monospace, Menlo, monospace; white-space: pre; font-size: 0.82rem; line-height: 1.4; }
+  .note { border-left: 4px solid var(--accent); background: #eef4fa; padding: 10px 16px; border-radius: 0 8px 8px 0; }
+  footer { margin-top: 50px; color: var(--muted); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Time Tracker — Design Document</h1>
+<p class="sub">Personal work-time tracking & analysis · CLI-first, web/phone-later · 2026-06-28</p>
+
+<h2>1. Context & Goals</h2>
+<div class="card">
+<p>The aim is to honestly understand how work time is spent and to become more efficient. Calendar
+meetings form a <em>fixed scaffold</em>; the real question is <strong>what happens in the gaps between
+meetings</strong>. Inspired by <a href="https://github.com/zarSou9/stint-tracker">stint-tracker</a>,
+a Python CLI that gamifies focused "stints".</p>
+<p><strong>Goals (MVP):</strong></p>
+<ul>
+  <li>See where time goes (honest accounting across categories of work).</li>
+  <li>Reflect on output (what was actually accomplished vs time spent).</li>
+  <li>Reduce idle / fragmented gaps between meetings.</li>
+</ul>
+<p><strong>Deferred goal:</strong> deep-work motivation via gamification/rewards (see Future Work).</p>
+</div>
+
+<h2>2. Core Design Insight</h2>
+<div class="note">
+Don't build three trackers. Build <strong>one canonical timeline of <code>TimeEntry</code> records</strong>,
+and treat the live timer, periodic check-in, retrospective backfill, and calendar import as four
+<em>input paths</em> that all write the same shape. Every entry carries a <code>source</code> field.
+This makes "do all three capture modes" sensible, makes backfill trivial, and keeps the door open for a
+web/phone front-end (it just reads/writes the same store).
+</div>
+<div class="ascii">            ┌─ live timer ───┐
+            ├─ check-in ─────┤      ┌──────────────┐      ┌── CLI views (now)
+calendar ──►├─ backfill ─────┼────► │  TimeEntry   │ ────►├── analysis/reports
+  sync      └────────────────┘      │   timeline   │      └── web/phone (later)
+                                    └──────────────┘</div>
+
+<h2>3. Key Design Choices</h2>
+<table>
+<tr><th>Choice</th><th>Decision</th><th>Why</th></tr>
+<tr><td>Storage</td><td>SQLite (config in TOML)</td><td>Headline goal is analysis — querying/aggregating over time. A future web backend points at the same file.</td></tr>
+<tr><td>Architecture</td><td>Thin CLI over a UI-free <code>core/</code> library</td><td>The concrete meaning of "CLI now, web later" — FastAPI reuses identical core, no rewrite.</td></tr>
+<tr><td>Stack</td><td>Python 3.12, <code>typer</code>, <code>rich</code>, <code>questionary</code>, Google API client</td><td>Mirrors stint-tracker where it fits; dedicated <code>time_tracker</code> conda env.</td></tr>
+<tr><td>Gaps</td><td>Derived, not stored</td><td>idle = workday − meetings − logged entries. "Reduce gaps" is just a report.</td></tr>
+<tr><td>Workday bounds</td><td>Explicit <code>tt in</code>/<code>tt out</code>, reminder-prompted; inference fallback</td><td>User is often in well before the first meeting, so inference alone is wrong.</td></tr>
+<tr><td>Calendar noise</td><td>Exclude pink reminders (<code>colorId 4</code>), configurable</td><td>First calendar items are reminders, not meetings; shouldn't count as the workday or clutter views.</td></tr>
+<tr><td>Maps Timeline</td><td>Deferred to phone geofencing; optional Takeout importer</td><td>No live API exists — Google deprecated it; Timeline is now on-device.</td></tr>
+</table>
+
+<h2>4. Data Model (SQLite)</h2>
+<table>
+<tr><th>Table</th><th>Columns</th></tr>
+<tr><td><code>time_entry</code></td><td>id, start_ts, end_ts (nullable while running), category, project, description, source (<code>timer</code>|<code>checkin</code>|<code>backfill</code>|<code>calendar</code>), calendar_event_id (nullable), created_at, updated_at</td></tr>
+<tr><td><code>calendar_event</code></td><td>id, gcal_id, title, start_ts, end_ts, attendees_count, color_id, event_type, last_synced</td></tr>
+<tr><td><code>workday</code></td><td>date, clock_in_ts, clock_out_ts, source (<code>manual</code>|<code>inferred</code>)</td></tr>
+<tr><td><code>category</code> / <code>project</code></td><td>lightweight lookups for consistent tagging</td></tr>
+<tr><td>config</td><td><code>config.toml</code>: check-in interval, reminder time, excluded_color_ids, work-hours window</td></tr>
+</table>
+
+<h2>5. Notifications & Reminders (macOS)</h2>
+<div class="card">
+<p>A CLI only acts while running. To notify when the app is closed, two pieces combine:</p>
+<ol>
+  <li><strong>Scheduling</strong> — a <code>launchd</code> LaunchAgent (plist in <code>~/Library/LaunchAgents/</code>),
+      reliable on macOS and reboot-safe. One agent fires the daily clock-in reminder at a configurable time;
+      another fires periodic check-ins on an interval.</li>
+  <li><strong>Display</strong> — native banners via <code>terminal-notifier</code> (fallback <code>osascript -e 'display notification'</code>).</li>
+</ol>
+<p><code>tt install-reminders</code> writes the plists for you; <code>tt uninstall-reminders</code> removes them.
+Each agent invokes a small <code>tt</code> subcommand that fires the banner, nudging you to run
+<code>tt in</code> or <code>tt checkin</code>.</p>
+</div>
+
+<h2>6. Google Calendar OAuth Setup</h2>
+<div class="card">
+<ol>
+  <li>Go to <a href="https://console.cloud.google.com/">Google Cloud Console</a> → create/select a project.</li>
+  <li>Enable the <strong>Google Calendar API</strong> for that project.</li>
+  <li>Configure the OAuth consent screen (External, add your own email as a test user).</li>
+  <li>Create an <strong>OAuth Client ID</strong> of type <em>Desktop app</em>; download <code>credentials.json</code>.</li>
+  <li>Place it at <code>~/.time_tracker/credentials.json</code>.</li>
+  <li>Run <code>tt sync</code> — first run opens a browser for consent; the token is cached at
+      <code>~/.time_tracker/token.json</code> and auto-refreshes after.</li>
+  <li>Setup lists upcoming events <em>with their colors</em> so you confirm pink = <code>colorId 4</code>
+      (some calendars may use a different id) before locking in <code>excluded_color_ids</code>.</li>
+</ol>
+</div>
+
+<h2>7. Build Phases & Test Plan</h2>
+<p>Tests are written and run <strong>after each phase</strong> using <code>pytest</code> against an
+in-memory SQLite DB; the suite must stay green before moving on.</p>
+<ul class="phases">
+  <li>
+    <span class="phase-title">Phase 1 — Core & Storage</span> <span class="tag mvp">MVP</span>
+    <div><code>db.py</code>, <code>models.py</code> (schema + migrations, <code>TimeEntry</code> CRUD), <code>config.py</code>.</div>
+    <div class="tests"><strong>Tests:</strong> schema creation; entry create/read/update/delete; running-entry (null end_ts) handling; config load/save defaults; timestamp ordering & timezone correctness.</div>
+  </li>
+  <li>
+    <span class="phase-title">Phase 2 — Capture (3 modes)</span> <span class="tag mvp">MVP</span>
+    <div><code>core/timer.py</code> (start/stop), <code>core/checkin.py</code>, <code>core/backfill.py</code> (fill gaps against the day timeline).</div>
+    <div class="tests"><strong>Tests:</strong> timer start creates open entry & stop closes it; cannot start two timers at once; check-in writes a point/interval entry; backfill detects gaps correctly and rejects overlaps with existing entries/meetings.</div>
+  </li>
+  <li>
+    <span class="phase-title">Phase 3 — Calendar Sync</span> <span class="tag mvp">MVP</span>
+    <div><code>core/gcal.py</code>: OAuth, pull events with <code>color_id</code>/<code>event_type</code>, filter excluded colors.</div>
+    <div class="tests"><strong>Tests (mocked Google API):</strong> event parsing into <code>calendar_event</code>; excluded colorId filtering; idempotent re-sync (no duplicates); all-day & cross-midnight event handling; token refresh path.</div>
+  </li>
+  <li>
+    <span class="phase-title">Phase 4 — Workday & Reminders</span> <span class="tag mvp">MVP</span>
+    <div><code>core/workday.py</code> (clock in/out + inference fallback), <code>core/notify.py</code>, <code>tt install-reminders</code>.</div>
+    <div class="tests"><strong>Tests:</strong> manual clock in/out persists one row/day; inference picks correct first/last activity; LaunchAgent plist generated with correct schedule/paths; notify command builds the right shell invocation (mocked).</div>
+  </li>
+  <li>
+    <span class="phase-title">Phase 5 — CLI Front-end</span> <span class="tag mvp">MVP</span>
+    <div><code>cli.py</code> (<code>typer</code>): <code>in/out</code>, <code>start/stop</code>, <code>checkin</code>, <code>day</code>, <code>sync</code>, <code>report</code>, <code>install-reminders</code>.</div>
+    <div class="tests"><strong>Tests:</strong> Typer <code>CliRunner</code> smoke tests for each command (exit code 0, expected output); end-to-end on a temp DB exercising all three capture modes + day view.</div>
+  </li>
+  <li>
+    <span class="phase-title">Phase 6 — Analysis</span> <span class="tag mvp">MVP</span>
+    <div><code>core/reports.py</code>: time-by-category, meeting vs focus vs idle, fragmentation metric, workday-length trend.</div>
+    <div class="tests"><strong>Tests:</strong> aggregation totals match seeded fixtures; idle = workday − meetings − entries; fragmentation metric on known timelines; empty-day & overlapping-entry edge cases.</div>
+  </li>
+</ul>
+
+<h2>8. Future Work</h2>
+<div class="card">
+<p><span class="tag future">Future</span> <strong>Gamification / rewards</strong> — stint-tracker-style streaks, minimum-duration "stints", milestone treats, layered over the same timeline.</p>
+<p><span class="tag future">Future</span> <strong>Web & phone</strong> — FastAPI wrapper over <code>core/</code> → responsive web UI / PWA.</p>
+<p><span class="tag future">Future</span> <strong>Phone geofencing</strong> — automatic arrive/leave detection at the work location (the real replacement for Maps Timeline).</p>
+<p><span class="tag future">Future</span> <strong>Takeout Timeline importer</strong> — optional batch backfill of location-based workday bounds from a Google Takeout JSON export.</p>
+<p><span class="tag future">Future</span> <strong>Screenshot calendar import</strong> — vision-based extraction as a fallback to the live API.</p>
+</div>
+
+<h2>9. Verification (end-to-end)</h2>
+<div class="card">
+<ul>
+  <li>Unit tests (above) green after every phase via <code>pytest</code>.</li>
+  <li>Manual run: create entries via all three modes, <code>tt sync</code> against a real calendar, confirm
+      <code>tt day</code> shows meetings (pink excluded) + logged time + gaps, and <code>tt report week</code> aggregates sanely.</li>
+  <li>Read the same DB from a throwaway script to prove <code>core/</code> is front-end-agnostic for the future web app.</li>
+</ul>
+</div>
+
+<footer>Time Tracker design doc · generated 2026-06-28 · CLI MVP, web/phone deferred.</footer>
+</div>
+</body>
+</html>
