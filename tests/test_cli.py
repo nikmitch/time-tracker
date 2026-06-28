@@ -85,6 +85,18 @@ def test_log_rejects_inverted(env):
     assert r.exit_code == 1
 
 
+def test_edit_refuses_non_interactive(env):
+    r = runner.invoke(app, ["edit"])
+    assert r.exit_code == 1
+    assert "interactive" in r.stdout
+
+
+def test_delete_refuses_non_interactive(env):
+    r = runner.invoke(app, ["delete"])
+    assert r.exit_code == 1
+    assert "interactive" in r.stdout
+
+
 def test_end_to_end_all_capture_modes(env):
     # timer
     runner.invoke(app, ["start", "-c", "dev", "-d", "coding"])

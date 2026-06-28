@@ -233,6 +233,96 @@ def day(date: str = typer.Argument(None, help="ISO date, defaults to today.")):
     console.print(table)
 
 
+def _pick_entry(db: Database, date: datetime | None = None) -> "TimeEntry | None":
+    """Show a questionary pick list of logged entries for a day, return chosen one."""
+    from .models import TimeEntry
+    target = date or _today_local()
+    start_utc, end_utc = timeutil.local_day_bounds(target)
+    entries = [e for e in db.list_entries(start_utc.isoformat(), end_utc.isoformat())
+               if e.end_ts is not None]
+    if not entries:
+        console.print("[yellow]No completed entries found for that day.[/yellow]")
+        return None
+    choices = {
+        f"{_local(e.start_ts)}-{_local(e.end_ts)}  [{e.category or '—'}]  {e.description or ''}": e
+        for e in entries
+    }
+    chosen_label = questionary.select("Which entry?", choices=list(choices)).ask()
+    if chosen_label is None:
+        return None
+    return choices[chosen_label]
+
+
+@app.command()
+def edit(
+    date: str = typer.Option(None, "--date", help="ISO date to pick from (default today)."),
+):
+    """Edit a logged entry — pick from today's list, then change fields interactively."""
+    if not _is_interactive():
+        console.print("[red]tt edit requires an interactive terminal.[/red]")
+        raise typer.Exit(1)
+    db = get_db()
+    entry = _pick_entry(db, _resolve_date(date) if date else None)
+    if entry is None:
+        return
+
+    console.print(f"Editing: [bold]{_local(entry.start_ts)}-{_local(entry.end_ts)}[/bold]  "
+                  f"{entry.description or ''}")
+
+    new_start = questionary.text(
+        f"Start time (HH:MM, blank = keep {_local(entry.start_ts)}):"
+    ).ask()
+    new_end = questionary.text(
+        f"End time (HH:MM, blank = keep {_local(entry.end_ts)}):"
+    ).ask()
+    new_desc = questionary.text(
+        f"Description (blank = keep '{entry.description or ''}'):"
+    ).ask()
+
+    base = entry.start_ts
+    if new_start and new_start.strip():
+        entry.start_ts = _parse_when(new_start.strip(), base)
+    if new_end and new_end.strip():
+        entry.end_ts = _parse_when(new_end.strip(), base)
+    if entry.end_ts and entry.end_ts <= entry.start_ts:
+        console.print("[red]End time must be after start time.[/red]")
+        raise typer.Exit(1)
+    if new_desc and new_desc.strip():
+        entry.description = new_desc.strip()
+
+    # Category / project via pick list
+    entry.category, entry.project, _ = _prompt_entry_fields(
+        db, entry.category, entry.project, "skip"
+    )
+
+    db.update_entry(entry)
+    console.print(f"[green]Updated[/green] {_local(entry.start_ts)}-{_local(entry.end_ts)} "
+                  f"({_fmt_dur(entry.duration_seconds)}): {entry.description or ''}")
+
+
+@app.command()
+def delete(
+    date: str = typer.Option(None, "--date", help="ISO date to pick from (default today)."),
+):
+    """Delete a logged entry — pick from today's list, then confirm."""
+    if not _is_interactive():
+        console.print("[red]tt delete requires an interactive terminal.[/red]")
+        raise typer.Exit(1)
+    db = get_db()
+    entry = _pick_entry(db, _resolve_date(date) if date else None)
+    if entry is None:
+        return
+    confirmed = questionary.confirm(
+        f"Delete {_local(entry.start_ts)}-{_local(entry.end_ts)} "
+        f"'{entry.description or entry.category or ''}'?"
+    ).ask()
+    if confirmed:
+        db.delete_entry(entry.id)
+        console.print("[yellow]Deleted.[/yellow]")
+    else:
+        console.print("Cancelled.")
+
+
 @app.command()
 def log(
     start: str = typer.Argument(..., help="Start time: 'HH:MM' (today) or ISO."),
