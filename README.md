@@ -22,5 +22,5 @@ pytest
 - [x] Phase 2 — Capture (timer / check-in / backfill)
 - [x] Phase 3 — Calendar sync
 - [x] Phase 4 — Workday & reminders
-- [ ] Phase 5 — CLI front-end
+- [x] Phase 5 — CLI front-end
 - [x] Phase 6 — Analysis

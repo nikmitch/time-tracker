@@ -67,8 +67,17 @@ def infer_workday(db: Database, config: Config, date: datetime) -> Optional[Work
 
 
 def get_workday(db: Database, config: Config, date: datetime) -> Optional[Workday]:
-    """Return the manual workday if recorded, else the inferred one."""
+    """Return the workday, preferring manual times.
+
+    Manual clock in/out wins, but any missing bound (e.g. clocked in but not yet
+    out) is supplemented from inferred activity so reports still work mid-day.
+    """
     existing = db.get_workday(_date_key(date))
-    if existing and existing.clock_in_ts is not None:
+    inferred = infer_workday(db, config, date)
+    if existing and (existing.clock_in_ts or existing.clock_out_ts):
+        existing.clock_in_ts = existing.clock_in_ts or (
+            inferred.clock_in_ts if inferred else None)
+        existing.clock_out_ts = existing.clock_out_ts or (
+            inferred.clock_out_ts if inferred else None)
         return existing
-    return infer_workday(db, config, date)
+    return inferred

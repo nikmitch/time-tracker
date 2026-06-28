@@ -1,0 +1,216 @@
+"""Typer CLI — a thin presentation layer over ``time_tracker.core``.
+
+No business logic lives here; every command delegates to the core/db modules so
+a future web/phone front-end can reuse them unchanged. The DB path can be
+overridden with the ``TIMETRACKER_DB`` env var (used by tests).
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import datetime, timedelta, timezone
+
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from .config import load_config
+from .core import backfill, checkin as checkin_mod, gcal, notify, reminders, reports
+from .core import timer as timer_mod
+from .core import workday as workday_mod
+from .db import DEFAULT_DB_PATH, Database
+
+app = typer.Typer(help="Track and analyse how you spend your work time.")
+console = Console()
+
+
+def get_db() -> Database:
+    return Database(os.environ.get("TIMETRACKER_DB", str(DEFAULT_DB_PATH)))
+
+
+def _fmt_dur(seconds: float) -> str:
+    h, rem = divmod(int(seconds), 3600)
+    m = rem // 60
+    return f"{h}h{m:02d}m" if h else f"{m}m"
+
+
+def _local(dt: datetime) -> str:
+    return dt.astimezone().strftime("%H:%M")
+
+
+def _today_local() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+@app.command()
+def start(
+    category: str = typer.Option(None, "--category", "-c"),
+    project: str = typer.Option(None, "--project", "-p"),
+    description: str = typer.Option(None, "--desc", "-d"),
+):
+    """Start a live timer."""
+    db = get_db()
+    try:
+        e = timer_mod.start_timer(db, category, project, description)
+    except timer_mod.TimerError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]Started[/green] timer at {_local(e.start_ts)} "
+                  f"({category or 'uncategorized'})")
+
+
+@app.command()
+def stop():
+    """Stop the running timer."""
+    db = get_db()
+    try:
+        e = timer_mod.stop_timer(db)
+    except timer_mod.TimerError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]Stopped[/green] — logged {_fmt_dur(e.duration_seconds)}")
+
+
+@app.command()
+def checkin(description: str = typer.Argument(..., help="What are you working on?")):
+    """Log a check-in covering the time since your last activity."""
+    db = get_db()
+    e = checkin_mod.record_checkin(db, description)
+    console.print(f"[green]Checked in[/green]: {description} "
+                  f"({_fmt_dur(e.duration_seconds)})")
+
+
+@app.command(name="in")
+def clock_in():
+    """Clock in for the day."""
+    db = get_db()
+    wd = workday_mod.clock_in(db)
+    console.print(f"[green]Clocked in[/green] at {_local(wd.clock_in_ts)}")
+
+
+@app.command(name="out")
+def clock_out():
+    """Clock out for the day."""
+    db = get_db()
+    wd = workday_mod.clock_out(db)
+    console.print(f"[green]Clocked out[/green] at {_local(wd.clock_out_ts)}")
+
+
+@app.command()
+def sync(days: int = typer.Option(7, help="Days forward/back to sync.")):
+    """Sync meetings from Google Calendar."""
+    db = get_db()
+    try:
+        creds = gcal.get_credentials()
+        service = gcal.build_service(creds)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    now = datetime.now(timezone.utc)
+    n = gcal.sync_calendar(db, service, now - timedelta(days=days),
+                           now + timedelta(days=days))
+    console.print(f"[green]Synced[/green] {n} events.")
+
+
+@app.command()
+def day(date: str = typer.Argument(None, help="ISO date, defaults to today.")):
+    """Show today's timeline: meetings, logged entries, and open gaps."""
+    db = get_db()
+    config = load_config()
+    target = datetime.fromisoformat(date).replace(tzinfo=timezone.utc) if date \
+        else _today_local()
+    start_iso = target.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    end_iso = (target.replace(hour=0, minute=0, second=0, microsecond=0)
+               + timedelta(days=1)).isoformat()
+
+    table = Table(title=f"Timeline — {target.date().isoformat()}")
+    table.add_column("Time")
+    table.add_column("Type")
+    table.add_column("What")
+
+    rows = []
+    for ev in db.list_calendar_events(start_iso, end_iso,
+                                      excluded_color_ids=config.excluded_color_ids):
+        rows.append((ev.start_ts, f"{_local(ev.start_ts)}-{_local(ev.end_ts)}",
+                     "meeting", ev.title))
+    for e in db.list_entries(start_iso, end_iso):
+        end = _local(e.end_ts) if e.end_ts else "…"
+        rows.append((e.start_ts, f"{_local(e.start_ts)}-{end}",
+                     e.source.value, e.description or e.category or ""))
+    for g in backfill.find_day_gaps(db, config, target):
+        rows.append((g.start, f"{_local(g.start)}-{_local(g.end)}",
+                     "[yellow]gap[/yellow]", _fmt_dur(g.seconds)))
+
+    for _, time_s, typ, what in sorted(rows, key=lambda r: r[0]):
+        table.add_row(time_s, typ, what)
+    console.print(table)
+
+
+@app.command()
+def report(period: str = typer.Argument("day", help="'day' or 'week'.")):
+    """Summarise where time went (meeting vs focus vs idle)."""
+    db = get_db()
+    config = load_config()
+    today = _today_local()
+    days = 7 if period == "week" else 1
+    start = today - timedelta(days=days - 1)
+
+    table = Table(title=f"Report — last {days} day(s)")
+    for col in ("Date", "Workday", "Meetings", "Focus", "Idle", "Frag."):
+        table.add_column(col)
+    cat_totals: dict[str, float] = {}
+    for i in range(days):
+        d = start + timedelta(days=i)
+        day0 = d.replace(hour=0, minute=0, second=0, microsecond=0)
+        s = reports.day_summary(db, config, d)
+        if s is not None:
+            table.add_row(s.date, _fmt_dur(s.workday_seconds),
+                          _fmt_dur(s.meeting_seconds), _fmt_dur(s.logged_seconds),
+                          _fmt_dur(s.idle_seconds), f"{s.fragmentation:.1f}/h")
+        for k, v in reports.category_breakdown(
+            db, day0.isoformat(),
+            (day0 + timedelta(days=1)).isoformat()).items():
+            cat_totals[k] = cat_totals.get(k, 0) + v
+    console.print(table)
+    if cat_totals:
+        cat = Table(title="By category")
+        cat.add_column("Category")
+        cat.add_column("Time")
+        for k, v in sorted(cat_totals.items(), key=lambda x: -x[1]):
+            cat.add_row(k, _fmt_dur(v))
+        console.print(cat)
+
+
+@app.command(name="install-reminders")
+def install_reminders():
+    """Install macOS clock-in + check-in reminder notifications."""
+    config = load_config()
+    written = reminders.install_reminders(config)
+    for p in written:
+        console.print(f"[green]Installed[/green] {p}")
+
+
+@app.command(name="uninstall-reminders")
+def uninstall_reminders():
+    """Remove the reminder notifications."""
+    removed = reminders.uninstall_reminders()
+    for p in removed:
+        console.print(f"[yellow]Removed[/yellow] {p}")
+    if not removed:
+        console.print("Nothing to remove.")
+
+
+@app.command(name="remind-clock-in", hidden=True)
+def remind_clock_in():
+    """(launchd) Fire the clock-in reminder banner."""
+    notify.notify("Time Tracker", "Did you clock in? Run `tt in` (set your time).")
+
+
+@app.command(name="remind-checkin", hidden=True)
+def remind_checkin():
+    """(launchd) Fire the periodic check-in banner."""
+    notify.notify("Time Tracker", "What are you working on? Run `tt checkin`.")
+
+
+if __name__ == "__main__":
+    app()
