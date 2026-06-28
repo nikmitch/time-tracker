@@ -52,7 +52,9 @@ def infer_workday(db: Database, config: Config, date: datetime) -> Optional[Work
         starts.append(e.start_ts)
         ends.append(e.end_ts or e.start_ts)
     for ev in db.list_calendar_events(
-        start_iso, end_iso, excluded_color_ids=config.excluded_color_ids
+        start_iso, end_iso,
+        excluded_color_ids=config.excluded_color_ids,
+        excluded_event_types=config.excluded_event_types,
     ):
         starts.append(ev.start_ts)
         ends.append(ev.end_ts)

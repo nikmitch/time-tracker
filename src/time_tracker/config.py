@@ -23,6 +23,8 @@ class Config:
     checkin_interval_minutes: int = 45
     # Google Calendar colorIds to treat as non-meetings (4 = pink/Flamingo).
     excluded_color_ids: list[str] = field(default_factory=lambda: ["4"])
+    # Google Calendar eventTypes to exclude (workingLocation = "Office/WFH" markers).
+    excluded_event_types: list[str] = field(default_factory=lambda: ["workingLocation", "focusTime"])
     # Soft work-hours window for views/inference fallback (local "HH:MM").
     work_hours_start: str = "08:00"
     work_hours_end: str = "18:00"

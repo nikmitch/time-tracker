@@ -146,7 +146,8 @@ def day(date: str = typer.Argument(None, help="ISO date, defaults to today.")):
 
     rows = []
     for ev in db.list_calendar_events(start_iso, end_iso,
-                                      excluded_color_ids=config.excluded_color_ids):
+                                      excluded_color_ids=config.excluded_color_ids,
+                                      excluded_event_types=config.excluded_event_types):
         rows.append((ev.start_ts, f"{_local(ev.start_ts)}-{_local(ev.end_ts)}",
                      "meeting", ev.title))
     for e in db.list_entries(start_iso, end_iso):

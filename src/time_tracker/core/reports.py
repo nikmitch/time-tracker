@@ -65,7 +65,9 @@ def day_summary(
     meetings = [
         Interval(ev.start_ts, ev.end_ts)
         for ev in db.list_calendar_events(
-            start_iso, end_iso, excluded_color_ids=config.excluded_color_ids
+            start_iso, end_iso,
+            excluded_color_ids=config.excluded_color_ids,
+            excluded_event_types=config.excluded_event_types,
         )
     ]
     entries = [

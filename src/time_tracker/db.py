@@ -233,6 +233,7 @@ class Database:
         start: Optional[str] = None,
         end: Optional[str] = None,
         excluded_color_ids: Optional[list[str]] = None,
+        excluded_event_types: Optional[list[str]] = None,
     ) -> list[CalendarEvent]:
         query = "SELECT * FROM calendar_event"
         params: list[str] = []
@@ -251,6 +252,9 @@ class Database:
         if excluded_color_ids:
             excluded = set(excluded_color_ids)
             events = [e for e in events if e.color_id not in excluded]
+        if excluded_event_types:
+            excluded_types = set(excluded_event_types)
+            events = [e for e in events if e.event_type not in excluded_types]
         return events
 
     # ----- Workday --------------------------------------------------------

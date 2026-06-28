@@ -16,3 +16,4 @@ token.json
 # Env
 .venv/
 .DS_Store
+client_secret*.json
