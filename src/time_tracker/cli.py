@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 
+import questionary
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -51,6 +52,61 @@ def _resolve_date(date: str | None) -> datetime:
     return d.replace(tzinfo=timeutil.local_tz()) if d.tzinfo is None else d
 
 
+def _known_values(db: Database, column: str) -> list[str]:
+    """Distinct non-null values for a column from time_entry, most-used first."""
+    rows = db.conn.execute(
+        f"SELECT {column}, COUNT(*) c FROM time_entry "
+        f"WHERE {column} IS NOT NULL GROUP BY {column} ORDER BY c DESC"
+    ).fetchall()
+    return [r[column] for r in rows]
+
+
+def _is_interactive() -> bool:
+    """True when running in a real terminal (not piped / CliRunner)."""
+    import sys
+    return sys.stdin.isatty()
+
+
+def _prompt_entry_fields(
+    db: Database,
+    category: str | None,
+    project: str | None,
+    description: str | None,
+) -> tuple[str | None, str | None, str | None]:
+    """Interactively fill in any missing entry fields using questionary.
+
+    Shows existing categories/projects as a pick list (most-used first) plus a
+    "New…" option to type a fresh value. Skips prompts when not in a TTY (e.g.
+    tests / piped use). Returns (category, project, description).
+    """
+    if not _is_interactive():
+        return category, project, description
+
+    NEW = "✏  New…"
+    SKIP = "— skip —"
+
+    def _pick_or_type(prompt: str, existing: list[str], current: str | None) -> str | None:
+        if current is not None:
+            return current or None
+        choices = existing + ([NEW] if existing else []) + [SKIP]
+        chosen = questionary.select(prompt, choices=choices).ask()
+        if chosen is None or chosen == SKIP:
+            return None
+        if chosen == NEW or not existing:
+            typed = questionary.text(f"Enter {prompt.lower().rstrip(':')}:").ask()
+            return typed.strip() or None
+        return chosen
+
+    category = _pick_or_type("Category:", _known_values(db, "category"), category)
+    project = _pick_or_type("Project:", _known_values(db, "project"), project)
+
+    if description is None:
+        description = questionary.text("Description (optional):").ask()
+        description = (description or "").strip() or None
+
+    return category, project, description
+
+
 def _parse_when(value: str, base: datetime) -> datetime:
     """Parse a time as either 'HH:MM' (local, on base's date) or full ISO -> UTC."""
     if "T" in value or " " in value:
@@ -65,11 +121,15 @@ def start(
     category: str = typer.Option(None, "--category", "-c"),
     project: str = typer.Option(None, "--project", "-p"),
     description: str = typer.Option(None, "--desc", "-d"),
+    at: str = typer.Option(None, "--at", help="Backdate start to HH:MM or ISO."),
 ):
-    """Start a live timer."""
+    """Start a live timer. With no flags, prompts interactively."""
     db = get_db()
+    if category is None and project is None and description is None:
+        category, project, description = _prompt_entry_fields(db, None, None, None)
+    start_ts = _parse_when(at, _today_local()) if at else None
     try:
-        e = timer_mod.start_timer(db, category, project, description)
+        e = timer_mod.start_timer(db, category, project, description, start_ts=start_ts)
     except timer_mod.TimerError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
@@ -90,10 +150,20 @@ def stop():
 
 
 @app.command()
-def checkin(description: str = typer.Argument(..., help="What are you working on?")):
-    """Log a check-in covering the time since your last activity."""
+def checkin(
+    description: str = typer.Argument(None, help="What are you working on?"),
+    category: str = typer.Option(None, "--category", "-c"),
+    project: str = typer.Option(None, "--project", "-p"),
+):
+    """Log a check-in covering the time since your last activity. Prompts if no args."""
     db = get_db()
-    e = checkin_mod.record_checkin(db, description)
+    if description is None and _is_interactive():
+        description = questionary.text("What have you been working on?").ask()
+        description = (description or "").strip() or None
+    description = description or "unspecified"
+    if category is None and project is None:
+        category, project, _ = _prompt_entry_fields(db, None, None, "skip")
+    e = checkin_mod.record_checkin(db, description, category=category, project=project)
     console.print(f"[green]Checked in[/green]: {description} "
                   f"({_fmt_dur(e.duration_seconds)})")
 
@@ -167,16 +237,25 @@ def day(date: str = typer.Argument(None, help="ISO date, defaults to today.")):
 def log(
     start: str = typer.Argument(..., help="Start time: 'HH:MM' (today) or ISO."),
     end: str = typer.Argument(..., help="End time: 'HH:MM' (today) or ISO."),
-    description: str = typer.Argument(..., help="What you were doing."),
+    description: str = typer.Argument(None, help="What you were doing."),
     category: str = typer.Option(None, "--category", "-c"),
     project: str = typer.Option(None, "--project", "-p"),
     date: str = typer.Option(None, "--date", help="ISO date for HH:MM times (default today)."),
 ):
-    """Retrospectively log a past block, e.g. `tt log 09:30 10:30 "wrote spec"`."""
+    """Retrospectively log a past block, e.g. `tt log 09:30 10:30 "wrote spec"`.
+
+    Also works interactively — omit description/category/project and you'll be prompted.
+    """
     db = get_db()
     base = _resolve_date(date)
     start_ts = _parse_when(start, base)
     end_ts = _parse_when(end, base)
+    if description is None and _is_interactive():
+        description = questionary.text("What were you working on?").ask()
+        description = (description or "").strip() or None
+    description = description or "unspecified"
+    if category is None and project is None:
+        category, project, _ = _prompt_entry_fields(db, None, None, "skip")
     try:
         e = backfill.fill_gap(db, start_ts, end_ts, description, category, project)
     except (ValueError, backfill.OverlapError) as exc:
