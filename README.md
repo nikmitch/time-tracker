@@ -20,7 +20,7 @@ pytest
 
 - [x] Phase 1 — Core & storage (SQLite, models, config)
 - [x] Phase 2 — Capture (timer / check-in / backfill)
-- [ ] Phase 3 — Calendar sync
+- [x] Phase 3 — Calendar sync
 - [ ] Phase 4 — Workday & reminders
 - [ ] Phase 5 — CLI front-end
 - [ ] Phase 6 — Analysis
