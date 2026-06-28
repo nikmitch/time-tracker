@@ -125,6 +125,12 @@ def start(
 ):
     """Start a live timer. With no flags, prompts interactively."""
     db = get_db()
+    running = db.get_running_entry()
+    if running is not None:
+        console.print(f"[red]A timer is already running[/red] (started {_local(running.start_ts)}"
+                      + (f" · {running.description}" if running.description else "")
+                      + "). Run [bold]tt stop[/bold] first.")
+        raise typer.Exit(1)
     if category is None and project is None and description is None:
         category, project, description = _prompt_entry_fields(db, None, None, None)
     start_ts = _parse_when(at, _today_local()) if at else None
