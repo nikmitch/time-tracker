@@ -23,4 +23,4 @@ pytest
 - [x] Phase 3 — Calendar sync
 - [x] Phase 4 — Workday & reminders
 - [ ] Phase 5 — CLI front-end
-- [ ] Phase 6 — Analysis
+- [x] Phase 6 — Analysis
