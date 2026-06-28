@@ -1,0 +1,74 @@
+"""Workday bounds: explicit clock in/out, with activity inference as fallback.
+
+The user is often in well before their first meeting, so explicit clock-in
+(reminder-prompted) is the source of truth; inference is only used when no
+manual time was recorded.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from typing import Optional
+
+from ..config import Config
+from ..db import Database
+from ..models import Workday, WorkdaySource, utcnow
+
+
+def _date_key(ts: datetime) -> str:
+    return ts.date().isoformat()
+
+
+def clock_in(db: Database, ts: Optional[datetime] = None) -> Workday:
+    ts = ts or utcnow()
+    wd = db.get_workday(_date_key(ts)) or Workday(date=_date_key(ts))
+    wd.clock_in_ts = ts
+    wd.source = WorkdaySource.MANUAL
+    return db.upsert_workday(wd)
+
+
+def clock_out(db: Database, ts: Optional[datetime] = None) -> Workday:
+    ts = ts or utcnow()
+    wd = db.get_workday(_date_key(ts)) or Workday(date=_date_key(ts))
+    wd.clock_out_ts = ts
+    wd.source = WorkdaySource.MANUAL
+    return db.upsert_workday(wd)
+
+
+def infer_workday(db: Database, config: Config, date: datetime) -> Optional[Workday]:
+    """Infer bounds from first/last activity that day (entries + meetings).
+
+    Excluded-color meetings (pink reminders) do not count. Returns ``None`` if
+    there was no activity at all.
+    """
+    day_start = date.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_iso = day_start.isoformat()
+    end_iso = (day_start + timedelta(days=1)).isoformat()
+
+    starts: list[datetime] = []
+    ends: list[datetime] = []
+    for e in db.list_entries(start_iso, end_iso):
+        starts.append(e.start_ts)
+        ends.append(e.end_ts or e.start_ts)
+    for ev in db.list_calendar_events(
+        start_iso, end_iso, excluded_color_ids=config.excluded_color_ids
+    ):
+        starts.append(ev.start_ts)
+        ends.append(ev.end_ts)
+
+    if not starts:
+        return None
+    return Workday(
+        date=_date_key(day_start),
+        clock_in_ts=min(starts),
+        clock_out_ts=max(ends),
+        source=WorkdaySource.INFERRED,
+    )
+
+
+def get_workday(db: Database, config: Config, date: datetime) -> Optional[Workday]:
+    """Return the manual workday if recorded, else the inferred one."""
+    existing = db.get_workday(_date_key(date))
+    if existing and existing.clock_in_ts is not None:
+        return existing
+    return infer_workday(db, config, date)
