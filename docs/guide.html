@@ -37,7 +37,7 @@
 <div class="wrap">
 
 <h1>Time Tracker — User Guide</h1>
-<p class="sub">How to use the <code>tt</code> CLI day to day · updated 2026-06-28</p>
+<p class="sub">How to use the <code>tt</code> CLI day to day · updated 2026-06-29</p>
 
 <div class="note">
 <strong>The one-line mental model:</strong> your meetings (from Google Calendar) are a fixed scaffold;
@@ -51,6 +51,7 @@ single daily timeline you can review and report on.
   <li><a href="#commands">Command reference</a></li>
   <li><a href="#workflow">A typical day (workflow)</a></li>
   <li><a href="#capture">The three ways to capture time</a></li>
+  <li><a href="#editing">Editing and deleting entries</a></li>
   <li><a href="#calendar">Connecting Google Calendar</a></li>
   <li><a href="#reminders">Reminder notifications</a></li>
   <li><a href="#data">Where your data lives</a></li>
@@ -72,10 +73,12 @@ Your data is stored centrally (see <a href="#data">Where your data lives</a>), s
 <tr><th>Command</th><th>What it does</th></tr>
 <tr><td><code>tt in</code></td><td>Clock in for the day (records your real arrival time — you're often in before your first meeting).</td></tr>
 <tr><td><code>tt out</code></td><td>Clock out for the day.</td></tr>
-<tr><td><code>tt start</code></td><td>Start a live timer. Options: <code>-c/--category</code>, <code>-p/--project</code>, <code>-d/--desc</code>.</td></tr>
+<tr><td><code>tt start</code></td><td>Start a live timer. With no flags, prompts interactively for category, project, and description (shows your existing values as a pick list). Flags: <code>-c</code> category, <code>-p</code> project, <code>-d</code> description, <code>--at HH:MM</code> to backdate the start. Errors immediately if a timer is already running.</td></tr>
 <tr><td><code>tt stop</code></td><td>Stop the running timer and log the elapsed span.</td></tr>
-<tr><td><code>tt checkin "text"</code></td><td>Log what you've been doing since your last activity (low-effort sampling / backfill).</td></tr>
-<tr><td><code>tt log START END "text"</code></td><td>Retrospectively log a past block, e.g. <code>tt log 09:30 10:30 "wrote spec"</code> at 3pm. Times are <code>HH:MM</code> local (or full ISO); <code>--date</code> for another day; <code>-c/-p</code> as on <code>start</code>.</td></tr>
+<tr><td><code>tt checkin</code></td><td>Log what you've been doing since your last activity. With no args, prompts for description and category/project. Or: <code>tt checkin "emails" -c admin</code>.</td></tr>
+<tr><td><code>tt log START END</code></td><td>Retrospectively log a past block at any time of day, e.g. <code>tt log 09:30 10:30 "wrote spec"</code> at 3pm. Times are <code>HH:MM</code> local (or full ISO). Omit description/category to be prompted. <code>--date 2026-06-26</code> for another day.</td></tr>
+<tr><td><code>tt edit [--date]</code></td><td>Pick a logged entry from today (or <code>--date</code>) and edit its start, end, description, category, or project interactively.</td></tr>
+<tr><td><code>tt delete [--date]</code></td><td>Pick a logged entry and delete it after confirmation.</td></tr>
 <tr><td><code>tt day [date]</code></td><td>Show the day's timeline: meetings, logged entries, and open <em>gaps</em>. Defaults to today.</td></tr>
 <tr><td><code>tt sync [--days N]</code></td><td>Pull meetings from Google Calendar (±N days, default 7).</td></tr>
 <tr><td><code>tt report [day|week]</code></td><td>Summarise meeting vs focus vs idle time, fragmentation, and time-by-category.</td></tr>
@@ -92,10 +95,14 @@ tt in
 # Pull today's meetings (or rely on the synced cache)
 tt sync
 
-# Starting a focused block
-tt start -c dev -p tracker -d "refactor sync logic"
+# Starting a focused block — tt start with no flags prompts you interactively.
+# Arrow keys to pick a category from your history (or "New…" to create one).
+tt start
 # ...work...
 tt stop
+
+# Quick flag version if you already know what to log
+tt start -c dev -p tracker -d "refactor sync logic"
 
 # Came back from a meeting / a scattered hour — log it after the fact
 tt checkin "answered emails, reviewed two PRs"
@@ -117,8 +124,19 @@ day, meetings come in automatically, and you fill the gaps with whichever captur
 <tr><th>Mode</th><th>Use when…</th><th>How</th></tr>
 <tr><td><strong>Live timer</strong></td><td>You're starting a focused block and want an accurate measure.</td><td><code>tt start …</code> then <code>tt stop</code></td></tr>
 <tr><td><strong>Check-in</strong></td><td>You forgot to start a timer, or want quick periodic sampling. Logs from your last activity to now.</td><td><code>tt checkin "what you did"</code></td></tr>
-<tr><td><strong>Backfill</strong></td><td>Reconstructing the day afterwards. <code>tt day</code> shows the open gaps to fill.</td><td>Review <code>tt day</code>; (gap-fill is surfaced there)</td></tr>
+<tr><td><strong>Retrospective log</strong></td><td>Reconstructing the day afterwards. Look at the gaps in <code>tt day</code> and fill them in.</td><td><code>tt log 09:30 10:30 "deep work"</code></td></tr>
 </table>
+
+<h2 id="editing">Editing and deleting entries</h2>
+<p>Made a mistake, or tagged something with the wrong category?</p>
+<table>
+<tr><th>Command</th><th>What happens</th></tr>
+<tr><td><code>tt edit</code></td><td>Shows a pick list of today's completed entries. Select one, then press Enter to keep each field or type to replace it (time, description, category, project).</td></tr>
+<tr><td><code>tt edit --date 2026-06-26</code></td><td>Same, but from a past day.</td></tr>
+<tr><td><code>tt delete</code></td><td>Pick an entry, confirm with y/N.</td></tr>
+<tr><td><code>tt delete --date 2026-06-26</code></td><td>Delete from a past day.</td></tr>
+</table>
+<div class="note">Both commands require an interactive terminal (they use arrow-key menus) — they won't run in a pipe or script.</div>
 
 <h2 id="calendar">Connecting Google Calendar</h2>
 <p>Meetings appear automatically once you've connected your calendar (one-time setup):</p>
@@ -129,9 +147,12 @@ day, meetings come in automatically, and you fill the gaps with whichever captur
   <li>Place it at <code>~/.time_tracker/credentials.json</code>.</li>
   <li>Run <code>tt sync</code> — a browser opens for consent once; the token is cached and auto-refreshes afterwards.</li>
 </ol>
-<div class="note"><strong>Pink reminders are excluded by default.</strong> Google colour-4 ("Flamingo")
-events are treated as reminders, not meetings, so they don't clutter your day or count toward your hours.
-Change this via <code>excluded_color_ids</code> in <code>~/.time_tracker/config.toml</code>.</div>
+<div class="note"><strong>Noise is filtered out by default.</strong> Two types of Google Calendar entries are excluded from your day view and gap calculations:
+<ul style="margin:6px 0 0">
+  <li><strong>Pink reminders</strong> (Google colour-4 "Flamingo") — change via <code>excluded_color_ids</code> in <code>config.toml</code>.</li>
+  <li><strong>Working location markers</strong> ("Office", "Home" etc.) and <strong>Focus Time</strong> blocks — change via <code>excluded_event_types</code> in <code>config.toml</code>.</li>
+</ul>
+</div>
 
 <h2 id="reminders">Reminder notifications</h2>
 <p>Run <code>tt install-reminders</code> once to get macOS banners:</p>
@@ -155,8 +176,8 @@ Change this via <code>excluded_color_ids</code> in <code>~/.time_tracker/config.
 <code>tt</code> from. Back up <code>tracker.db</code> to keep your history.</p>
 
 <h2 id="gotchas">Good to know / gotchas</h2>
-<div class="warn"><strong>One timer at a time.</strong> <code>tt start</code> errors if a timer is already
-running — <code>tt stop</code> first.</div>
+<div class="warn"><strong>One timer at a time.</strong> <code>tt start</code> checks immediately
+(before any prompts) and errors if a timer is already running — <code>tt stop</code> first.</div>
 <div class="note"><strong>Time zones:</strong> day boundaries and the work-hours window are computed in
 your <em>local</em> time. Times you type into <code>tt log</code> are local too.</div>
 <div class="warn"><strong>Reports need a framed day.</strong> Idle/focus/meeting splits use your clock
