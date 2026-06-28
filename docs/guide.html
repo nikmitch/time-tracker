@@ -75,6 +75,7 @@ Your data is stored centrally (see <a href="#data">Where your data lives</a>), s
 <tr><td><code>tt start</code></td><td>Start a live timer. Options: <code>-c/--category</code>, <code>-p/--project</code>, <code>-d/--desc</code>.</td></tr>
 <tr><td><code>tt stop</code></td><td>Stop the running timer and log the elapsed span.</td></tr>
 <tr><td><code>tt checkin "text"</code></td><td>Log what you've been doing since your last activity (low-effort sampling / backfill).</td></tr>
+<tr><td><code>tt log START END "text"</code></td><td>Retrospectively log a past block, e.g. <code>tt log 09:30 10:30 "wrote spec"</code> at 3pm. Times are <code>HH:MM</code> local (or full ISO); <code>--date</code> for another day; <code>-c/-p</code> as on <code>start</code>.</td></tr>
 <tr><td><code>tt day [date]</code></td><td>Show the day's timeline: meetings, logged entries, and open <em>gaps</em>. Defaults to today.</td></tr>
 <tr><td><code>tt sync [--days N]</code></td><td>Pull meetings from Google Calendar (±N days, default 7).</td></tr>
 <tr><td><code>tt report [day|week]</code></td><td>Summarise meeting vs focus vs idle time, fragmentation, and time-by-category.</td></tr>
@@ -156,9 +157,8 @@ Change this via <code>excluded_color_ids</code> in <code>~/.time_tracker/config.
 <h2 id="gotchas">Good to know / gotchas</h2>
 <div class="warn"><strong>One timer at a time.</strong> <code>tt start</code> errors if a timer is already
 running — <code>tt stop</code> first.</div>
-<div class="warn"><strong>Time zones (MVP):</strong> day boundaries and the work-hours window are currently
-computed in UTC. If your day view's gap edges look shifted by your UTC offset, that's why — switching to
-local time is the next planned fix.</div>
+<div class="note"><strong>Time zones:</strong> day boundaries and the work-hours window are computed in
+your <em>local</em> time. Times you type into <code>tt log</code> are local too.</div>
 <div class="warn"><strong>Reports need a framed day.</strong> Idle/focus/meeting splits use your clock
 in/out window. If you never clock in, <code>tt</code> infers the window from your first/last activity, but
 clocking in gives the truest picture.</div>

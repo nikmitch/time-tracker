@@ -17,6 +17,7 @@ from rich.table import Table
 from .config import load_config
 from .core import backfill, checkin as checkin_mod, gcal, notify, reminders, reports
 from .core import timer as timer_mod
+from .core import timeutil
 from .core import workday as workday_mod
 from .db import DEFAULT_DB_PATH, Database
 
@@ -40,6 +41,23 @@ def _local(dt: datetime) -> str:
 
 def _today_local() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _resolve_date(date: str | None) -> datetime:
+    """A datetime anchored on the requested local date (defaults to today)."""
+    if not date:
+        return _today_local()
+    d = datetime.fromisoformat(date)
+    return d.replace(tzinfo=timeutil.local_tz()) if d.tzinfo is None else d
+
+
+def _parse_when(value: str, base: datetime) -> datetime:
+    """Parse a time as either 'HH:MM' (local, on base's date) or full ISO -> UTC."""
+    if "T" in value or " " in value:
+        dt = datetime.fromisoformat(value.replace(" ", "T"))
+        dt = dt.replace(tzinfo=timeutil.local_tz()) if dt.tzinfo is None else dt
+        return dt.astimezone(timezone.utc)
+    return timeutil.parse_hhmm_on(base, value)
 
 
 @app.command()
@@ -117,13 +135,11 @@ def day(date: str = typer.Argument(None, help="ISO date, defaults to today.")):
     """Show today's timeline: meetings, logged entries, and open gaps."""
     db = get_db()
     config = load_config()
-    target = datetime.fromisoformat(date).replace(tzinfo=timezone.utc) if date \
-        else _today_local()
-    start_iso = target.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    end_iso = (target.replace(hour=0, minute=0, second=0, microsecond=0)
-               + timedelta(days=1)).isoformat()
+    target = _resolve_date(date)
+    start_utc, end_utc = timeutil.local_day_bounds(target)
+    start_iso, end_iso = start_utc.isoformat(), end_utc.isoformat()
 
-    table = Table(title=f"Timeline — {target.date().isoformat()}")
+    table = Table(title=f"Timeline — {timeutil.local_date_key(target)}")
     table.add_column("Time")
     table.add_column("Type")
     table.add_column("What")
@@ -147,6 +163,29 @@ def day(date: str = typer.Argument(None, help="ISO date, defaults to today.")):
 
 
 @app.command()
+def log(
+    start: str = typer.Argument(..., help="Start time: 'HH:MM' (today) or ISO."),
+    end: str = typer.Argument(..., help="End time: 'HH:MM' (today) or ISO."),
+    description: str = typer.Argument(..., help="What you were doing."),
+    category: str = typer.Option(None, "--category", "-c"),
+    project: str = typer.Option(None, "--project", "-p"),
+    date: str = typer.Option(None, "--date", help="ISO date for HH:MM times (default today)."),
+):
+    """Retrospectively log a past block, e.g. `tt log 09:30 10:30 "wrote spec"`."""
+    db = get_db()
+    base = _resolve_date(date)
+    start_ts = _parse_when(start, base)
+    end_ts = _parse_when(end, base)
+    try:
+        e = backfill.fill_gap(db, start_ts, end_ts, description, category, project)
+    except (ValueError, backfill.OverlapError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]Logged[/green] {_local(start_ts)}-{_local(end_ts)} "
+                  f"({_fmt_dur(e.duration_seconds)}): {description}")
+
+
+@app.command()
 def report(period: str = typer.Argument("day", help="'day' or 'week'.")):
     """Summarise where time went (meeting vs focus vs idle)."""
     db = get_db()
@@ -161,15 +200,15 @@ def report(period: str = typer.Argument("day", help="'day' or 'week'.")):
     cat_totals: dict[str, float] = {}
     for i in range(days):
         d = start + timedelta(days=i)
-        day0 = d.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_start_utc, day_end_utc = timeutil.local_day_bounds(d)
         s = reports.day_summary(db, config, d)
         if s is not None:
             table.add_row(s.date, _fmt_dur(s.workday_seconds),
                           _fmt_dur(s.meeting_seconds), _fmt_dur(s.logged_seconds),
                           _fmt_dur(s.idle_seconds), f"{s.fragmentation:.1f}/h")
         for k, v in reports.category_breakdown(
-            db, day0.isoformat(),
-            (day0 + timedelta(days=1)).isoformat()).items():
+            db, day_start_utc.isoformat(),
+            day_end_utc.isoformat()).items():
             cat_totals[k] = cat_totals.get(k, 0) + v
     console.print(table)
     if cat_totals:

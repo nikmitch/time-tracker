@@ -13,11 +13,12 @@ from typing import Optional
 
 from ..db import Database
 from ..models import Source, TimeEntry, utcnow
+from .timeutil import local_day_bounds
 
 
 def _day_bounds_iso(now: datetime) -> tuple[str, str]:
-    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return day_start.isoformat(), (day_start + timedelta(days=1)).isoformat()
+    start_utc, end_utc = local_day_bounds(now)
+    return start_utc.isoformat(), end_utc.isoformat()
 
 
 def last_activity_end(db: Database, now: datetime) -> Optional[datetime]:

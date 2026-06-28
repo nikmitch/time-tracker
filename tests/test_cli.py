@@ -68,6 +68,23 @@ def test_help(env):
     assert "checkin" in r.stdout
 
 
+def test_log_retrospective(env):
+    r = runner.invoke(app, ["log", "09:30", "10:30", "wrote spec", "-c", "dev"])
+    assert r.exit_code == 0
+    assert "Logged" in r.stdout
+
+
+def test_log_rejects_overlap(env):
+    runner.invoke(app, ["log", "09:00", "10:00", "a"])
+    r = runner.invoke(app, ["log", "09:30", "10:30", "b"])
+    assert r.exit_code == 1
+
+
+def test_log_rejects_inverted(env):
+    r = runner.invoke(app, ["log", "10:00", "09:00", "x"])
+    assert r.exit_code == 1
+
+
 def test_end_to_end_all_capture_modes(env):
     # timer
     runner.invoke(app, ["start", "-c", "dev", "-d", "coding"])

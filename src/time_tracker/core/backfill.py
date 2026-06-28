@@ -14,6 +14,7 @@ from ..config import Config
 from ..db import Database
 from ..models import Source, TimeEntry, utcnow
 from .timeline import Interval, find_gaps, overlaps
+from .timeutil import parse_hhmm_on
 
 
 class OverlapError(RuntimeError):
@@ -21,12 +22,10 @@ class OverlapError(RuntimeError):
 
 
 def _day_window(date: datetime, config: Config) -> Interval:
-    """The window to consider for gaps, from the day's workday/work-hours."""
-    day = date.replace(hour=0, minute=0, second=0, microsecond=0)
-    sh, sm = (int(x) for x in config.work_hours_start.split(":"))
-    eh, em = (int(x) for x in config.work_hours_end.split(":"))
+    """The work-hours window (local time) to consider for gaps, as UTC bounds."""
     return Interval(
-        day.replace(hour=sh, minute=sm), day.replace(hour=eh, minute=em)
+        parse_hhmm_on(date, config.work_hours_start),
+        parse_hhmm_on(date, config.work_hours_end),
     )
 
 

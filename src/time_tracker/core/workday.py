@@ -7,16 +7,17 @@ manual time was recorded.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 from ..config import Config
 from ..db import Database
 from ..models import Workday, WorkdaySource, utcnow
+from .timeutil import local_date_key, local_day_bounds
 
 
 def _date_key(ts: datetime) -> str:
-    return ts.date().isoformat()
+    return local_date_key(ts)
 
 
 def clock_in(db: Database, ts: Optional[datetime] = None) -> Workday:
@@ -41,9 +42,9 @@ def infer_workday(db: Database, config: Config, date: datetime) -> Optional[Work
     Excluded-color meetings (pink reminders) do not count. Returns ``None`` if
     there was no activity at all.
     """
-    day_start = date.replace(hour=0, minute=0, second=0, microsecond=0)
-    start_iso = day_start.isoformat()
-    end_iso = (day_start + timedelta(days=1)).isoformat()
+    day_start_utc, day_end_utc = local_day_bounds(date)
+    start_iso = day_start_utc.isoformat()
+    end_iso = day_end_utc.isoformat()
 
     starts: list[datetime] = []
     ends: list[datetime] = []
@@ -59,7 +60,7 @@ def infer_workday(db: Database, config: Config, date: datetime) -> Optional[Work
     if not starts:
         return None
     return Workday(
-        date=_date_key(day_start),
+        date=_date_key(date),
         clock_in_ts=min(starts),
         clock_out_ts=max(ends),
         source=WorkdaySource.INFERRED,

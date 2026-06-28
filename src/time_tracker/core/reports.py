@@ -15,6 +15,7 @@ from ..config import Config
 from ..db import Database
 from . import workday
 from .timeline import Interval, find_gaps, merge_intervals
+from .timeutil import local_date_key
 
 
 @dataclass
@@ -99,7 +100,7 @@ def workday_lengths(
         if wd and wd.clock_in_ts and wd.clock_out_ts:
             out.append((wd.date, (wd.clock_out_ts - wd.clock_in_ts).total_seconds()))
         else:
-            out.append((d.date().isoformat(), 0.0))
+            out.append((local_date_key(d), 0.0))
     return out
 
 
