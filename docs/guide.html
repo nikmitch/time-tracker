@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Time Tracker — User Guide</title>
+<style>
+  :root {
+    --bg:#fafafa; --fg:#1f2430; --muted:#5c6370; --accent:#3b6ea5;
+    --card:#fff; --border:#e2e5ea; --code-bg:#f3f4f6; --ok:#2e7d32; --warn:#8a6d3b;
+  }
+  *{box-sizing:border-box;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+       line-height:1.6;color:var(--fg);background:var(--bg);margin:0;}
+  .wrap{max-width:880px;margin:0 auto;padding:40px 24px 80px;}
+  h1{font-size:2rem;margin-bottom:2px;}
+  h2{font-size:1.4rem;margin-top:2.4rem;border-bottom:2px solid var(--border);padding-bottom:6px;}
+  h3{font-size:1.08rem;margin-top:1.4rem;color:var(--accent);}
+  .sub{color:var(--muted);margin-top:0;}
+  code{background:var(--code-bg);padding:1px 5px;border-radius:4px;font-size:0.88em;}
+  pre{background:#1f2430;color:#e6e9ef;padding:14px 16px;border-radius:8px;overflow-x:auto;}
+  pre code{background:none;padding:0;color:inherit;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin:14px 0;}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:0.92rem;}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top;}
+  th{background:var(--code-bg);}
+  .note{border-left:4px solid var(--accent);background:#eef4fa;padding:10px 16px;border-radius:0 8px 8px 0;margin:14px 0;}
+  .warn{border-left:4px solid var(--warn);background:#fdf3e0;padding:10px 16px;border-radius:0 8px 8px 0;margin:14px 0;}
+  .ok{color:var(--ok);font-weight:600;}
+  .toc a{color:var(--accent);text-decoration:none;}
+  .toc li{margin:3px 0;}
+  kbd{background:#eee;border:1px solid #ccc;border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:0.82em;}
+  footer{margin-top:50px;color:var(--muted);font-size:0.85rem;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Time Tracker — User Guide</h1>
+<p class="sub">How to use the <code>tt</code> CLI day to day · updated 2026-06-28</p>
+
+<div class="note">
+<strong>The one-line mental model:</strong> your meetings (from Google Calendar) are a fixed scaffold;
+<code>tt</code> helps you capture and understand <em>the gaps between them</em>. Everything you log lands on a
+single daily timeline you can review and report on.
+</div>
+
+<h2 id="toc">Contents</h2>
+<ul class="toc">
+  <li><a href="#anywhere">Does it work from anywhere?</a></li>
+  <li><a href="#commands">Command reference</a></li>
+  <li><a href="#workflow">A typical day (workflow)</a></li>
+  <li><a href="#capture">The three ways to capture time</a></li>
+  <li><a href="#calendar">Connecting Google Calendar</a></li>
+  <li><a href="#reminders">Reminder notifications</a></li>
+  <li><a href="#data">Where your data lives</a></li>
+  <li><a href="#gotchas">Good to know / gotchas</a></li>
+</ul>
+
+<h2 id="anywhere">Does it work from anywhere?</h2>
+<p><span class="ok">Yes.</span> A global launcher is installed at <code>~/.local/bin/tt</code>, which is on your
+<code>PATH</code>. Open <em>any</em> new terminal, in <em>any</em> folder, and just run:</p>
+<pre><code>tt in</code></pre>
+<p>You do <strong>not</strong> need to <code>cd</code> into the project folder, and you do <strong>not</strong> need to
+run <code>conda activate time_tracker</code> first — the launcher points straight at the right Python environment.
+Your data is stored centrally (see <a href="#data">Where your data lives</a>), so the working directory never matters.</p>
+<div class="note">The <code>conda activate time_tracker</code> step is only needed for <em>development</em>
+(editing the code, running <code>pytest</code>) — not for everyday use.</div>
+
+<h2 id="commands">Command reference</h2>
+<table>
+<tr><th>Command</th><th>What it does</th></tr>
+<tr><td><code>tt in</code></td><td>Clock in for the day (records your real arrival time — you're often in before your first meeting).</td></tr>
+<tr><td><code>tt out</code></td><td>Clock out for the day.</td></tr>
+<tr><td><code>tt start</code></td><td>Start a live timer. Options: <code>-c/--category</code>, <code>-p/--project</code>, <code>-d/--desc</code>.</td></tr>
+<tr><td><code>tt stop</code></td><td>Stop the running timer and log the elapsed span.</td></tr>
+<tr><td><code>tt checkin "text"</code></td><td>Log what you've been doing since your last activity (low-effort sampling / backfill).</td></tr>
+<tr><td><code>tt day [date]</code></td><td>Show the day's timeline: meetings, logged entries, and open <em>gaps</em>. Defaults to today.</td></tr>
+<tr><td><code>tt sync [--days N]</code></td><td>Pull meetings from Google Calendar (±N days, default 7).</td></tr>
+<tr><td><code>tt report [day|week]</code></td><td>Summarise meeting vs focus vs idle time, fragmentation, and time-by-category.</td></tr>
+<tr><td><code>tt install-reminders</code></td><td>Set up macOS notifications (daily clock-in + periodic check-in).</td></tr>
+<tr><td><code>tt uninstall-reminders</code></td><td>Remove those notifications.</td></tr>
+<tr><td><code>tt --help</code></td><td>List all commands; <code>tt &lt;command&gt; --help</code> for details on one.</td></tr>
+</table>
+
+<h2 id="workflow">A typical day</h2>
+<div class="card">
+<pre><code># Morning — when you actually sit down (before any meetings)
+tt in
+
+# Pull today's meetings (or rely on the synced cache)
+tt sync
+
+# Starting a focused block
+tt start -c dev -p tracker -d "refactor sync logic"
+# ...work...
+tt stop
+
+# Came back from a meeting / a scattered hour — log it after the fact
+tt checkin "answered emails, reviewed two PRs"
+
+# Glance at the day so far — what's tracked, what's an open gap
+tt day
+
+# End of day
+tt out
+tt report day      # where did today actually go?
+tt report week     # zoom out: trends, fragmentation, categories</code></pre>
+</div>
+<p>The aim isn't to track every second — it's to get an honest-enough picture. Clock in/out frame the
+day, meetings come in automatically, and you fill the gaps with whichever capture style suits the moment.</p>
+
+<h2 id="capture">The three ways to capture time</h2>
+<p>All three write to the same timeline; mix and match freely.</p>
+<table>
+<tr><th>Mode</th><th>Use when…</th><th>How</th></tr>
+<tr><td><strong>Live timer</strong></td><td>You're starting a focused block and want an accurate measure.</td><td><code>tt start …</code> then <code>tt stop</code></td></tr>
+<tr><td><strong>Check-in</strong></td><td>You forgot to start a timer, or want quick periodic sampling. Logs from your last activity to now.</td><td><code>tt checkin "what you did"</code></td></tr>
+<tr><td><strong>Backfill</strong></td><td>Reconstructing the day afterwards. <code>tt day</code> shows the open gaps to fill.</td><td>Review <code>tt day</code>; (gap-fill is surfaced there)</td></tr>
+</table>
+
+<h2 id="calendar">Connecting Google Calendar</h2>
+<p>Meetings appear automatically once you've connected your calendar (one-time setup):</p>
+<ol>
+  <li>In the <a href="https://console.cloud.google.com/">Google Cloud Console</a>, create a project and enable the <strong>Google Calendar API</strong>.</li>
+  <li>Configure the OAuth consent screen (External; add your own email as a test user).</li>
+  <li>Create an <strong>OAuth Client ID</strong> of type <em>Desktop app</em> and download <code>credentials.json</code>.</li>
+  <li>Place it at <code>~/.time_tracker/credentials.json</code>.</li>
+  <li>Run <code>tt sync</code> — a browser opens for consent once; the token is cached and auto-refreshes afterwards.</li>
+</ol>
+<div class="note"><strong>Pink reminders are excluded by default.</strong> Google colour-4 ("Flamingo")
+events are treated as reminders, not meetings, so they don't clutter your day or count toward your hours.
+Change this via <code>excluded_color_ids</code> in <code>~/.time_tracker/config.toml</code>.</div>
+
+<h2 id="reminders">Reminder notifications</h2>
+<p>Run <code>tt install-reminders</code> once to get macOS banners:</p>
+<ul>
+  <li>A <strong>daily clock-in nudge</strong> at your configured time (default 09:00) — handy since you're often in before your first meeting.</li>
+  <li>A <strong>periodic check-in nudge</strong> (default every 45 min) prompting <code>tt checkin</code>.</li>
+</ul>
+<p>Tune the times in <code>~/.time_tracker/config.toml</code> (<code>clock_in_reminder_time</code>,
+<code>checkin_interval_minutes</code> — set to <code>0</code> to disable check-ins), then re-run
+<code>tt install-reminders</code>. Remove everything with <code>tt uninstall-reminders</code>.</p>
+
+<h2 id="data">Where your data lives</h2>
+<table>
+<tr><th>File</th><th>Contents</th></tr>
+<tr><td><code>~/.time_tracker/tracker.db</code></td><td>Your SQLite timeline (all entries, meetings, workdays).</td></tr>
+<tr><td><code>~/.time_tracker/config.toml</code></td><td>Settings: reminder times, excluded colours, work-hours window.</td></tr>
+<tr><td><code>~/.time_tracker/credentials.json</code></td><td>Your Google OAuth client (you provide this).</td></tr>
+<tr><td><code>~/.time_tracker/token.json</code></td><td>Cached calendar access token (auto-created).</td></tr>
+</table>
+<p>Because everything is under your home folder, the data is the same no matter which directory you run
+<code>tt</code> from. Back up <code>tracker.db</code> to keep your history.</p>
+
+<h2 id="gotchas">Good to know / gotchas</h2>
+<div class="warn"><strong>One timer at a time.</strong> <code>tt start</code> errors if a timer is already
+running — <code>tt stop</code> first.</div>
+<div class="warn"><strong>Time zones (MVP):</strong> day boundaries and the work-hours window are currently
+computed in UTC. If your day view's gap edges look shifted by your UTC offset, that's why — switching to
+local time is the next planned fix.</div>
+<div class="warn"><strong>Reports need a framed day.</strong> Idle/focus/meeting splits use your clock
+in/out window. If you never clock in, <code>tt</code> infers the window from your first/last activity, but
+clocking in gives the truest picture.</div>
+<p>Not yet built (see <code>docs/design.html</code> → Future Work): rewards/gamification, a web &amp; phone
+app, automatic location-based clock-in, and screenshot-based calendar import.</p>
+
+<footer>Time Tracker user guide · for the full design rationale see <code>docs/design.html</code>.</footer>
+</div>
+</body>
+</html>
