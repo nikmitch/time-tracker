@@ -129,11 +129,17 @@ def sync_calendar(
     time_min: Optional[datetime] = None,
     time_max: Optional[datetime] = None,
     calendar_id: str = "primary",
+    category_rules: Optional[list[dict]] = None,
 ) -> int:
     """Pull events into the local cache (idempotent). Returns count synced.
 
-    Cancelled events (status == "cancelled") are skipped.
+    Cancelled events (status == "cancelled") are skipped. When ``category_rules``
+    are given, a rule-derived category is attached to each event; the DB layer
+    preserves any manual override so re-syncs never clobber a user's edit.
     """
+    from .categorize import categorize_meeting
+
+    rules = category_rules or []
     now = utcnow()
     time_min = time_min or (now - timedelta(days=7))
     time_max = time_max or (now + timedelta(days=7))
@@ -143,6 +149,11 @@ def sync_calendar(
             continue
         if "start" not in raw or "end" not in raw:
             continue
-        db.upsert_calendar_event(parse_event(raw))
+        event = parse_event(raw)
+        cat = categorize_meeting(event.title, rules)
+        if cat is not None:
+            event.category = cat
+            event.category_source = "rule"
+        db.upsert_calendar_event(event)
         count += 1
     return count

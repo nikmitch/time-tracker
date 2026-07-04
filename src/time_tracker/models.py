@@ -93,6 +93,9 @@ class CalendarEvent:
     attendees_count: int = 0
     color_id: Optional[str] = None
     event_type: Optional[str] = None
+    category: Optional[str] = None
+    # "rule" (auto-derived, re-applied on sync) or "manual" (never overwritten).
+    category_source: Optional[str] = None
     id: Optional[int] = None
     last_synced: datetime = field(default_factory=utcnow)
 

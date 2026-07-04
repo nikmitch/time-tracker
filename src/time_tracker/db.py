@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS calendar_event (
     attendees_count INTEGER NOT NULL DEFAULT 0,
     color_id TEXT,
     event_type TEXT,
+    category TEXT,
+    category_source TEXT,
     last_synced TEXT NOT NULL
 );
 
@@ -98,6 +100,13 @@ class Database:
             if self._has_column("time_entry", "project"):
                 conn.execute("ALTER TABLE time_entry DROP COLUMN project")
             conn.execute("DROP TABLE IF EXISTS project")
+            # Meeting categories (auto rule-derived or manual override).
+            if not self._has_column("calendar_event", "category"):
+                conn.execute("ALTER TABLE calendar_event ADD COLUMN category TEXT")
+            if not self._has_column("calendar_event", "category_source"):
+                conn.execute(
+                    "ALTER TABLE calendar_event ADD COLUMN category_source TEXT"
+                )
 
     def _has_column(self, table: str, column: str) -> bool:
         rows = self.conn.execute(f"PRAGMA table_info({table})").fetchall()
@@ -210,8 +219,8 @@ class Database:
                 """
                 INSERT INTO calendar_event
                     (gcal_id, title, start_ts, end_ts, attendees_count,
-                     color_id, event_type, last_synced)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                     color_id, event_type, category, category_source, last_synced)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(gcal_id) DO UPDATE SET
                     title = excluded.title,
                     start_ts = excluded.start_ts,
@@ -219,6 +228,13 @@ class Database:
                     attendees_count = excluded.attendees_count,
                     color_id = excluded.color_id,
                     event_type = excluded.event_type,
+                    -- A manual category is the user's override: never let a
+                    -- re-sync clobber it. Rule-derived categories refresh freely.
+                    category = CASE WHEN calendar_event.category_source = 'manual'
+                        THEN calendar_event.category ELSE excluded.category END,
+                    category_source = CASE WHEN calendar_event.category_source = 'manual'
+                        THEN calendar_event.category_source
+                        ELSE excluded.category_source END,
                     last_synced = excluded.last_synced
                 """,
                 (
@@ -229,6 +245,8 @@ class Database:
                     event.attendees_count,
                     event.color_id,
                     event.event_type,
+                    event.category,
+                    event.category_source,
                     to_iso(event.last_synced),
                 ),
             )
@@ -266,6 +284,15 @@ class Database:
             excluded_types = set(excluded_event_types)
             events = [e for e in events if e.event_type not in excluded_types]
         return events
+
+    def set_calendar_category(self, event_id: int, category: Optional[str]) -> None:
+        """Set a manual category override on a meeting (survives re-sync)."""
+        with self._tx() as conn:
+            conn.execute(
+                "UPDATE calendar_event SET category = ?, category_source = 'manual' "
+                "WHERE id = ?",
+                (category, event_id),
+            )
 
     # ----- Workday --------------------------------------------------------
 
@@ -324,6 +351,8 @@ def _row_to_event(row: sqlite3.Row) -> CalendarEvent:
         attendees_count=row["attendees_count"],
         color_id=row["color_id"],
         event_type=row["event_type"],
+        category=row["category"],
+        category_source=row["category_source"],
         last_synced=from_iso(row["last_synced"]),
     )
 

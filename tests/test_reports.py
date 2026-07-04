@@ -25,6 +25,20 @@ def test_category_breakdown(db: Database):
     assert totals["email"] == 3600
 
 
+def test_category_breakdown_folds_meeting_categories(db: Database):
+    backfill.fill_gap(db, at(9), at(10), "a", category="dev")  # 1h entry
+    db.upsert_calendar_event(CalendarEvent(
+        gcal_id="m", title="MATS sync", start_ts=at(10), end_ts=at(11),
+        color_id="7", category="MATS workplace", category_source="rule"))  # 1h meeting
+    db.upsert_calendar_event(CalendarEvent(
+        gcal_id="u", title="Uncat", start_ts=at(11), end_ts=at(12), color_id="7"))  # no cat
+    totals = reports.category_breakdown(
+        db, at(0).isoformat(), at(23).isoformat(), _cfg())
+    assert totals["dev"] == 3600
+    assert totals["MATS workplace"] == 3600
+    assert "Uncat" not in totals  # uncategorized meetings are not counted here
+
+
 def test_uncategorized_bucket(db: Database):
     backfill.fill_gap(db, at(9), at(10), "x")
     totals = reports.category_breakdown(db, at(0).isoformat(), at(23).isoformat())

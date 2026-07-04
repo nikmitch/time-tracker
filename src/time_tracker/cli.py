@@ -193,6 +193,7 @@ def clock_out():
 def sync(days: int = typer.Option(7, help="Days forward/back to sync.")):
     """Sync meetings from Google Calendar."""
     db = get_db()
+    config = load_config()
     try:
         creds = gcal.get_credentials()
         service = gcal.build_service(creds)
@@ -201,7 +202,8 @@ def sync(days: int = typer.Option(7, help="Days forward/back to sync.")):
         raise typer.Exit(1)
     now = datetime.now(timezone.utc)
     n = gcal.sync_calendar(db, service, now - timedelta(days=days),
-                           now + timedelta(days=days))
+                           now + timedelta(days=days),
+                           category_rules=config.meeting_category_rules)
     console.print(f"[green]Synced[/green] {n} events.")
 
 
@@ -327,6 +329,44 @@ def delete(
 
 
 @app.command()
+def meeting(
+    date: str = typer.Option(None, "--date", help="ISO date to pick from (default today)."),
+):
+    """Categorize a meeting — pick from a day's meetings, then set its category.
+
+    The category is stored as a manual override, so `tt sync` will never
+    overwrite it (unlike categories auto-derived from title rules).
+    """
+    if not _is_interactive():
+        console.print("[red]tt meeting requires an interactive terminal.[/red]")
+        raise typer.Exit(1)
+    db = get_db()
+    config = load_config()
+    target = _resolve_date(date) if date else _today_local()
+    start_utc, end_utc = timeutil.local_day_bounds(target)
+    events = db.list_calendar_events(
+        start_utc.isoformat(), end_utc.isoformat(),
+        excluded_color_ids=config.excluded_color_ids,
+        excluded_event_types=config.excluded_event_types,
+    )
+    if not events:
+        console.print("[yellow]No meetings found for that day.[/yellow]")
+        return
+    choices = {
+        f"{_local(ev.start_ts)}-{_local(ev.end_ts)}  [{ev.category or '—'}]  {ev.title}": ev
+        for ev in events
+    }
+    chosen_label = questionary.select("Which meeting?", choices=list(choices)).ask()
+    if chosen_label is None:
+        return
+    ev = choices[chosen_label]
+    category = _pick_or_type(db, "Category:", "category", None)
+    db.set_calendar_category(ev.id, category)
+    console.print(f"[green]Categorized[/green] '{ev.title}' as "
+                  f"{category or '(uncategorized)'}")
+
+
+@app.command()
 def log(
     start: str = typer.Argument(..., help="Start time: 'HH:MM' (today) or ISO."),
     end: str = typer.Argument(..., help="End time: 'HH:MM' (today) or ISO."),
@@ -380,7 +420,7 @@ def report(period: str = typer.Argument("day", help="'day' or 'week'.")):
                           _fmt_dur(s.idle_seconds), f"{s.fragmentation:.1f}/h")
         for k, v in reports.category_breakdown(
             db, day_start_utc.isoformat(),
-            day_end_utc.isoformat()).items():
+            day_end_utc.isoformat(), config).items():
             cat_totals[k] = cat_totals.get(k, 0) + v
     console.print(table)
     if cat_totals:

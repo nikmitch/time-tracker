@@ -35,14 +35,30 @@ class DaySummary:
 
 
 def category_breakdown(
-    db: Database, start_iso: str, end_iso: str
+    db: Database,
+    start_iso: str,
+    end_iso: str,
+    config: Optional[Config] = None,
 ) -> dict[str, float]:
-    """Total seconds per category for completed entries in the range."""
+    """Total seconds per category in the range.
+
+    Counts completed time entries and, when ``config`` is given, categorized
+    meetings (non-excluded). Meetings without a category are ignored here so the
+    breakdown stays about *how* time was categorized, not raw meeting volume.
+    """
     totals: dict[str, float] = defaultdict(float)
     for e in db.list_entries(start_iso, end_iso):
         if e.end_ts is None:
             continue
         totals[e.category or "(uncategorized)"] += e.duration_seconds
+    if config is not None:
+        for ev in db.list_calendar_events(
+            start_iso, end_iso,
+            excluded_color_ids=config.excluded_color_ids,
+            excluded_event_types=config.excluded_event_types,
+        ):
+            if ev.category:
+                totals[ev.category] += (ev.end_ts - ev.start_ts).total_seconds()
     return dict(totals)
 
 

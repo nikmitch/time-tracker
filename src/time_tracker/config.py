@@ -28,11 +28,22 @@ class Config:
     # Soft work-hours window for views/inference fallback (local "HH:MM").
     work_hours_start: str = "08:00"
     work_hours_end: str = "18:00"
+    # Keyword→category rules that auto-tag meetings by title (first match wins).
+    # Each rule is {"match": <substring>, "category": <name>}.
+    meeting_category_rules: list[dict] = field(default_factory=list)
 
     def to_toml(self) -> str:
         lines = ["# Time Tracker configuration", ""]
         for key, value in asdict(self).items():
-            if isinstance(value, list):
+            if isinstance(value, list) and all(isinstance(v, dict) for v in value):
+                items = ", ".join(
+                    "{ "
+                    + ", ".join(f'{k} = "{iv}"' for k, iv in rule.items())
+                    + " }"
+                    for rule in value
+                )
+                rendered = f"[{items}]"
+            elif isinstance(value, list):
                 rendered = "[" + ", ".join(f'"{v}"' for v in value) + "]"
             elif isinstance(value, str):
                 rendered = f'"{value}"'

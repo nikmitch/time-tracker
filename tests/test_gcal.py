@@ -104,6 +104,48 @@ def test_sync_skips_cancelled(db: Database):
     assert n == 1
 
 
+def _named_event(eid, summary, h1=9, h2=10):
+    ev = _timed_event(eid, h1, h2)
+    ev["summary"] = summary
+    return ev
+
+
+def test_sync_applies_category_rules(db: Database):
+    rules = [{"match": "MATS", "category": "MATS workplace"}]
+    pages = [{"items": [_named_event("m", "MATS standup"),
+                        _named_event("x", "Dentist")]}]
+    gcal.sync_calendar(db, FakeService(pages),
+                       time_min=datetime(2026, 6, 28, tzinfo=UTC),
+                       time_max=datetime(2026, 6, 29, tzinfo=UTC),
+                       category_rules=rules)
+    by_id = {e.gcal_id: e for e in db.list_calendar_events()}
+    assert by_id["m"].category == "MATS workplace"
+    assert by_id["m"].category_source == "rule"
+    assert by_id["x"].category is None
+
+
+def test_manual_category_survives_resync_but_rule_refreshes(db: Database):
+    rules = [{"match": "MATS", "category": "MATS workplace"}]
+    args = dict(time_min=datetime(2026, 6, 28, tzinfo=UTC),
+                time_max=datetime(2026, 6, 29, tzinfo=UTC),
+                category_rules=rules)
+    pages = [{"items": [_named_event("m", "MATS standup"),
+                        _named_event("r", "MATS retro")]}]
+    gcal.sync_calendar(db, FakeService(pages), **args)
+
+    # User manually overrides one meeting's category.
+    m = {e.gcal_id: e for e in db.list_calendar_events()}["m"]
+    db.set_calendar_category(m.id, "fellows")
+
+    # Re-sync: manual override is preserved, rule-derived one still present.
+    gcal.sync_calendar(db, FakeService(pages), **args)
+    by_id = {e.gcal_id: e for e in db.list_calendar_events()}
+    assert by_id["m"].category == "fellows"
+    assert by_id["m"].category_source == "manual"
+    assert by_id["r"].category == "MATS workplace"
+    assert by_id["r"].category_source == "rule"
+
+
 def test_fetch_follows_pagination(db: Database):
     pages = [
         {"items": [_timed_event("a", 9, 10)], "nextPageToken": 1},

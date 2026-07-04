@@ -80,8 +80,9 @@ Your data is stored centrally (see <a href="#data">Where your data lives</a>), s
 <tr><td><code>tt edit [--date]</code></td><td>Pick a logged entry from today (or <code>--date</code>) and edit its start, end, description, or category interactively.</td></tr>
 <tr><td><code>tt delete [--date]</code></td><td>Pick a logged entry and delete it after confirmation.</td></tr>
 <tr><td><code>tt day [date]</code></td><td>Show the day's timeline: meetings, logged entries, and open <em>gaps</em>. Defaults to today.</td></tr>
-<tr><td><code>tt sync [--days N]</code></td><td>Pull meetings from Google Calendar (±N days, default 7).</td></tr>
-<tr><td><code>tt report [day|week]</code></td><td>Summarise meeting vs focus vs idle time, fragmentation, and time-by-category.</td></tr>
+<tr><td><code>tt sync [--days N]</code></td><td>Pull meetings from Google Calendar (±N days, default 7). Meetings are auto-tagged with a category if their title matches a rule in <code>meeting_category_rules</code> (see below).</td></tr>
+<tr><td><code>tt meeting [--date]</code></td><td>Pick a meeting from a day and set its category by hand. This manual choice is an <em>override</em> — <code>tt sync</code> will never overwrite it, even if a title rule would say otherwise.</td></tr>
+<tr><td><code>tt report [day|week]</code></td><td>Summarise meeting vs focus vs idle time, fragmentation, and time-by-category (categorized meetings are folded into the by-category totals).</td></tr>
 <tr><td><code>tt install-reminders</code></td><td>Set up macOS notifications (daily clock-in + periodic check-in).</td></tr>
 <tr><td><code>tt uninstall-reminders</code></td><td>Remove those notifications.</td></tr>
 <tr><td><code>tt --help</code></td><td>List all commands; <code>tt &lt;command&gt; --help</code> for details on one.</td></tr>
@@ -152,6 +153,12 @@ day, meetings come in automatically, and you fill the gaps with whichever captur
   <li><strong>Pink reminders</strong> (Google colour-4 "Flamingo") — change via <code>excluded_color_ids</code> in <code>config.toml</code>.</li>
   <li><strong>Working location markers</strong> ("Office", "Home" etc.) and <strong>Focus Time</strong> blocks — change via <code>excluded_event_types</code> in <code>config.toml</code>.</li>
 </ul>
+</div>
+
+<div class="note"><strong>Auto-categorizing meetings.</strong> Add keyword→category rules to
+<code>~/.time_tracker/config.toml</code> and every synced meeting whose title contains a keyword is tagged automatically (first match wins):
+<pre><code>meeting_category_rules = [{ match = "MATS", category = "MATS workplace" }, { match = "fellow", category = "fellows" }]</code></pre>
+Need to fix a single meeting? <code>tt meeting</code> sets a manual category that <code>tt sync</code> will never overwrite.
 </div>
 
 <h2 id="reminders">Reminder notifications</h2>
