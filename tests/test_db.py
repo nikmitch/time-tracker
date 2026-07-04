@@ -25,7 +25,8 @@ def test_schema_creates_tables(db: Database):
         "SELECT name FROM sqlite_master WHERE type='table'"
     ).fetchall()
     names = {r["name"] for r in rows}
-    assert {"time_entry", "calendar_event", "workday", "category", "project"} <= names
+    assert {"time_entry", "calendar_event", "workday", "category"} <= names
+    assert "project" not in names
 
 
 def test_has_column_and_migrate_is_idempotent(db: Database):
@@ -34,6 +35,44 @@ def test_has_column_and_migrate_is_idempotent(db: Database):
     # Re-running the migration must be a harmless no-op.
     db._migrate()
     db.init_schema()
+
+
+def test_migration_drops_legacy_project(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(str(path))
+    conn.executescript(
+        """
+        CREATE TABLE time_entry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            start_ts TEXT NOT NULL, end_ts TEXT, category TEXT,
+            project TEXT, description TEXT, source TEXT NOT NULL,
+            calendar_event_id INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE project (id INTEGER PRIMARY KEY, name TEXT);
+        INSERT INTO time_entry (start_ts, source, created_at, updated_at, project)
+        VALUES ('2026-06-28T09:00:00+00:00', 'timer', '2026-06-28T09:00:00+00:00',
+                '2026-06-28T09:00:00+00:00', 'legacy');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    database = Database(path)
+    try:
+        assert not database._has_column("time_entry", "project")
+        names = {
+            r["name"]
+            for r in database.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        assert "project" not in names
+        # Existing row survives the column drop.
+        assert database.list_entries()[0].category is None
+    finally:
+        database.close()
 
 
 def test_create_and_get_entry(db: Database):

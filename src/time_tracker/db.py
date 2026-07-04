@@ -30,7 +30,6 @@ CREATE TABLE IF NOT EXISTS time_entry (
     start_ts TEXT NOT NULL,
     end_ts TEXT,
     category TEXT,
-    project TEXT,
     description TEXT,
     source TEXT NOT NULL,
     calendar_event_id INTEGER,
@@ -67,11 +66,6 @@ CREATE TABLE IF NOT EXISTS category (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE
 );
-
-CREATE TABLE IF NOT EXISTS project (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE
-);
 """
 
 
@@ -100,7 +94,10 @@ class Database:
         is guarded by ``_has_column`` so re-running is a no-op.
         """
         with self._tx() as conn:
-            pass  # migration steps are added by later features
+            # Legacy DBs predate the removal of the per-entry ``project`` field.
+            if self._has_column("time_entry", "project"):
+                conn.execute("ALTER TABLE time_entry DROP COLUMN project")
+            conn.execute("DROP TABLE IF EXISTS project")
 
     def _has_column(self, table: str, column: str) -> bool:
         rows = self.conn.execute(f"PRAGMA table_info({table})").fetchall()
@@ -125,15 +122,14 @@ class Database:
             cur = conn.execute(
                 """
                 INSERT INTO time_entry
-                    (start_ts, end_ts, category, project, description, source,
+                    (start_ts, end_ts, category, description, source,
                      calendar_event_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     to_iso(entry.start_ts),
                     to_iso(entry.end_ts),
                     entry.category,
-                    entry.project,
                     entry.description,
                     entry.source.value,
                     entry.calendar_event_id,
@@ -184,7 +180,7 @@ class Database:
             conn.execute(
                 """
                 UPDATE time_entry SET
-                    start_ts = ?, end_ts = ?, category = ?, project = ?,
+                    start_ts = ?, end_ts = ?, category = ?,
                     description = ?, source = ?, calendar_event_id = ?, updated_at = ?
                 WHERE id = ?
                 """,
@@ -192,7 +188,6 @@ class Database:
                     to_iso(entry.start_ts),
                     to_iso(entry.end_ts),
                     entry.category,
-                    entry.project,
                     entry.description,
                     entry.source.value,
                     entry.calendar_event_id,
@@ -311,7 +306,6 @@ def _row_to_entry(row: sqlite3.Row) -> TimeEntry:
         start_ts=from_iso(row["start_ts"]),
         end_ts=from_iso(row["end_ts"]),
         category=row["category"],
-        project=row["project"],
         description=row["description"],
         source=Source(row["source"]),
         calendar_event_id=row["calendar_event_id"],

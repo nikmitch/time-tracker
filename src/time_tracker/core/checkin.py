@@ -34,7 +34,6 @@ def record_checkin(
     db: Database,
     description: str,
     category: Optional[str] = None,
-    project: Optional[str] = None,
     now: Optional[datetime] = None,
     max_lookback_minutes: int = 120,
 ) -> TimeEntry:
@@ -55,7 +54,6 @@ def record_checkin(
         start_ts=since,
         end_ts=now,
         category=category,
-        project=project,
         description=description,
         source=Source.CHECKIN,
     )

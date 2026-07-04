@@ -20,7 +20,6 @@ class TimerError(RuntimeError):
 def start_timer(
     db: Database,
     category: Optional[str] = None,
-    project: Optional[str] = None,
     description: Optional[str] = None,
     start_ts: Optional[datetime] = None,
 ) -> TimeEntry:
@@ -31,7 +30,6 @@ def start_timer(
         start_ts=start_ts or utcnow(),
         end_ts=None,
         category=category,
-        project=project,
         description=description,
         source=Source.TIMER,
     )

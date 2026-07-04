@@ -67,44 +67,45 @@ def _is_interactive() -> bool:
     return sys.stdin.isatty()
 
 
+def _pick_or_type(
+    db: Database, prompt: str, column: str, current: str | None
+) -> str | None:
+    """Pick an existing value for ``column`` (most-used first) or type a new one."""
+    NEW = "✏  New…"
+    SKIP = "— skip —"
+    if current is not None:
+        return current or None
+    choices = _known_values(db, column) + [NEW, SKIP]
+    chosen = questionary.select(prompt, choices=choices).ask()
+    if chosen is None or chosen == SKIP:
+        return None
+    if chosen == NEW:
+        typed = questionary.text(f"Enter {prompt.lower().rstrip(':')}:").ask()
+        return typed.strip() or None
+    return chosen
+
+
 def _prompt_entry_fields(
     db: Database,
     category: str | None,
-    project: str | None,
     description: str | None,
-) -> tuple[str | None, str | None, str | None]:
+) -> tuple[str | None, str | None]:
     """Interactively fill in any missing entry fields using questionary.
 
-    Shows existing categories/projects as a pick list (most-used first) plus a
-    "New…" option to type a fresh value. Skips prompts when not in a TTY (e.g.
-    tests / piped use). Returns (category, project, description).
+    Shows existing categories as a pick list (most-used first) plus a "New…"
+    option to type a fresh value. Skips prompts when not in a TTY (e.g. tests /
+    piped use). Returns (category, description).
     """
     if not _is_interactive():
-        return category, project, description
+        return category, description
 
-    NEW = "✏  New…"
-    SKIP = "— skip —"
-
-    def _pick_or_type(prompt: str, existing: list[str], current: str | None) -> str | None:
-        if current is not None:
-            return current or None
-        choices = existing + [NEW, SKIP]
-        chosen = questionary.select(prompt, choices=choices).ask()
-        if chosen is None or chosen == SKIP:
-            return None
-        if chosen == NEW:
-            typed = questionary.text(f"Enter {prompt.lower().rstrip(':')}:").ask()
-            return typed.strip() or None
-        return chosen
-
-    category = _pick_or_type("Category:", _known_values(db, "category"), category)
-    project = _pick_or_type("Project:", _known_values(db, "project"), project)
+    category = _pick_or_type(db, "Category:", "category", category)
 
     if description is None:
         description = questionary.text("Description (optional):").ask()
         description = (description or "").strip() or None
 
-    return category, project, description
+    return category, description
 
 
 def _parse_when(value: str, base: datetime) -> datetime:
@@ -119,7 +120,6 @@ def _parse_when(value: str, base: datetime) -> datetime:
 @app.command()
 def start(
     category: str = typer.Option(None, "--category", "-c"),
-    project: str = typer.Option(None, "--project", "-p"),
     description: str = typer.Option(None, "--desc", "-d"),
     at: str = typer.Option(None, "--at", help="Backdate start to HH:MM or ISO."),
 ):
@@ -131,11 +131,11 @@ def start(
                       + (f" · {running.description}" if running.description else "")
                       + "). Run [bold]tt stop[/bold] first.")
         raise typer.Exit(1)
-    if category is None and project is None and description is None:
-        category, project, description = _prompt_entry_fields(db, None, None, None)
+    if category is None and description is None:
+        category, description = _prompt_entry_fields(db, None, None)
     start_ts = _parse_when(at, _today_local()) if at else None
     try:
-        e = timer_mod.start_timer(db, category, project, description, start_ts=start_ts)
+        e = timer_mod.start_timer(db, category, description, start_ts=start_ts)
     except timer_mod.TimerError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
@@ -159,7 +159,6 @@ def stop():
 def checkin(
     description: str = typer.Argument(None, help="What are you working on?"),
     category: str = typer.Option(None, "--category", "-c"),
-    project: str = typer.Option(None, "--project", "-p"),
 ):
     """Log a check-in covering the time since your last activity. Prompts if no args."""
     db = get_db()
@@ -167,9 +166,9 @@ def checkin(
         description = questionary.text("What have you been working on?").ask()
         description = (description or "").strip() or None
     description = description or "unspecified"
-    if category is None and project is None:
-        category, project, _ = _prompt_entry_fields(db, None, None, "skip")
-    e = checkin_mod.record_checkin(db, description, category=category, project=project)
+    if category is None:
+        category, _ = _prompt_entry_fields(db, None, "skip")
+    e = checkin_mod.record_checkin(db, description, category=category)
     console.print(f"[green]Checked in[/green]: {description} "
                   f"({_fmt_dur(e.duration_seconds)})")
 
@@ -296,10 +295,8 @@ def edit(
     if new_desc and new_desc.strip():
         entry.description = new_desc.strip()
 
-    # Category / project via pick list
-    entry.category, entry.project, _ = _prompt_entry_fields(
-        db, entry.category, entry.project, "skip"
-    )
+    # Category via pick list
+    entry.category, _ = _prompt_entry_fields(db, entry.category, "skip")
 
     db.update_entry(entry)
     console.print(f"[green]Updated[/green] {_local(entry.start_ts)}-{_local(entry.end_ts)} "
@@ -335,12 +332,11 @@ def log(
     end: str = typer.Argument(..., help="End time: 'HH:MM' (today) or ISO."),
     description: str = typer.Argument(None, help="What you were doing."),
     category: str = typer.Option(None, "--category", "-c"),
-    project: str = typer.Option(None, "--project", "-p"),
     date: str = typer.Option(None, "--date", help="ISO date for HH:MM times (default today)."),
 ):
     """Retrospectively log a past block, e.g. `tt log 09:30 10:30 "wrote spec"`.
 
-    Also works interactively — omit description/category/project and you'll be prompted.
+    Also works interactively — omit description/category and you'll be prompted.
     """
     db = get_db()
     base = _resolve_date(date)
@@ -350,10 +346,10 @@ def log(
         description = questionary.text("What were you working on?").ask()
         description = (description or "").strip() or None
     description = description or "unspecified"
-    if category is None and project is None:
-        category, project, _ = _prompt_entry_fields(db, None, None, "skip")
+    if category is None:
+        category, _ = _prompt_entry_fields(db, None, "skip")
     try:
-        e = backfill.fill_gap(db, start_ts, end_ts, description, category, project)
+        e = backfill.fill_gap(db, start_ts, end_ts, description, category)
     except (ValueError, backfill.OverlapError) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)

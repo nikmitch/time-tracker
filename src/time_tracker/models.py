@@ -64,7 +64,6 @@ class TimeEntry:
     start_ts: datetime
     end_ts: Optional[datetime] = None
     category: Optional[str] = None
-    project: Optional[str] = None
     description: Optional[str] = None
     source: Source = Source.TIMER
     calendar_event_id: Optional[int] = None

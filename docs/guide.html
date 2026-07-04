@@ -73,11 +73,11 @@ Your data is stored centrally (see <a href="#data">Where your data lives</a>), s
 <tr><th>Command</th><th>What it does</th></tr>
 <tr><td><code>tt in</code></td><td>Clock in for the day (records your real arrival time — you're often in before your first meeting).</td></tr>
 <tr><td><code>tt out</code></td><td>Clock out for the day.</td></tr>
-<tr><td><code>tt start</code></td><td>Start a live timer. With no flags, prompts interactively for category, project, and description (shows your existing values as a pick list). Flags: <code>-c</code> category, <code>-p</code> project, <code>-d</code> description, <code>--at HH:MM</code> to backdate the start. Errors immediately if a timer is already running.</td></tr>
+<tr><td><code>tt start</code></td><td>Start a live timer. With no flags, prompts interactively for category and description (shows your existing values as a pick list). Flags: <code>-c</code> category, <code>-d</code> description, <code>--at HH:MM</code> to backdate the start. Errors immediately if a timer is already running.</td></tr>
 <tr><td><code>tt stop</code></td><td>Stop the running timer and log the elapsed span.</td></tr>
-<tr><td><code>tt checkin</code></td><td>Log what you've been doing since your last activity. With no args, prompts for description and category/project. Or: <code>tt checkin "emails" -c admin</code>.</td></tr>
+<tr><td><code>tt checkin</code></td><td>Log what you've been doing since your last activity. With no args, prompts for description and category. Or: <code>tt checkin "emails" -c admin</code>.</td></tr>
 <tr><td><code>tt log START END</code></td><td>Retrospectively log a past block at any time of day, e.g. <code>tt log 09:30 10:30 "wrote spec"</code> at 3pm. Times are <code>HH:MM</code> local (or full ISO). Omit description/category to be prompted. <code>--date 2026-06-26</code> for another day.</td></tr>
-<tr><td><code>tt edit [--date]</code></td><td>Pick a logged entry from today (or <code>--date</code>) and edit its start, end, description, category, or project interactively.</td></tr>
+<tr><td><code>tt edit [--date]</code></td><td>Pick a logged entry from today (or <code>--date</code>) and edit its start, end, description, or category interactively.</td></tr>
 <tr><td><code>tt delete [--date]</code></td><td>Pick a logged entry and delete it after confirmation.</td></tr>
 <tr><td><code>tt day [date]</code></td><td>Show the day's timeline: meetings, logged entries, and open <em>gaps</em>. Defaults to today.</td></tr>
 <tr><td><code>tt sync [--days N]</code></td><td>Pull meetings from Google Calendar (±N days, default 7).</td></tr>
@@ -131,7 +131,7 @@ day, meetings come in automatically, and you fill the gaps with whichever captur
 <p>Made a mistake, or tagged something with the wrong category?</p>
 <table>
 <tr><th>Command</th><th>What happens</th></tr>
-<tr><td><code>tt edit</code></td><td>Shows a pick list of today's completed entries. Select one, then press Enter to keep each field or type to replace it (time, description, category, project).</td></tr>
+<tr><td><code>tt edit</code></td><td>Shows a pick list of today's completed entries. Select one, then press Enter to keep each field or type to replace it (time, description, category).</td></tr>
 <tr><td><code>tt edit --date 2026-06-26</code></td><td>Same, but from a past day.</td></tr>
 <tr><td><code>tt delete</code></td><td>Pick an entry, confirm with y/N.</td></tr>
 <tr><td><code>tt delete --date 2026-06-26</code></td><td>Delete from a past day.</td></tr>

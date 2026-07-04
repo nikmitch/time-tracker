@@ -89,10 +89,10 @@ calendar ──►├─ backfill ─────┼────► │  TimeEnt
 <h2>4. Data Model (SQLite)</h2>
 <table>
 <tr><th>Table</th><th>Columns</th></tr>
-<tr><td><code>time_entry</code></td><td>id, start_ts, end_ts (nullable while running), category, project, description, source (<code>timer</code>|<code>checkin</code>|<code>backfill</code>|<code>calendar</code>), calendar_event_id (nullable), created_at, updated_at</td></tr>
+<tr><td><code>time_entry</code></td><td>id, start_ts, end_ts (nullable while running), category, description, source (<code>timer</code>|<code>checkin</code>|<code>backfill</code>|<code>calendar</code>), calendar_event_id (nullable), created_at, updated_at</td></tr>
 <tr><td><code>calendar_event</code></td><td>id, gcal_id, title, start_ts, end_ts, attendees_count, color_id, event_type, last_synced</td></tr>
 <tr><td><code>workday</code></td><td>date, clock_in_ts, clock_out_ts, source (<code>manual</code>|<code>inferred</code>)</td></tr>
-<tr><td><code>category</code> / <code>project</code></td><td>lightweight lookups for consistent tagging</td></tr>
+<tr><td><code>category</code></td><td>lightweight lookup for consistent tagging</td></tr>
 <tr><td>config</td><td><code>config.toml</code>: check-in interval, reminder time, excluded_color_ids, work-hours window</td></tr>
 </table>
 

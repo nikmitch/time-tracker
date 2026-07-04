@@ -67,7 +67,6 @@ def fill_gap(
     end: datetime,
     description: str,
     category: Optional[str] = None,
-    project: Optional[str] = None,
 ) -> TimeEntry:
     """Create a backfill entry, rejecting overlaps with existing tracked time."""
     if end <= start:
@@ -84,7 +83,6 @@ def fill_gap(
         start_ts=start,
         end_ts=end,
         category=category,
-        project=project,
         description=description,
         source=Source.BACKFILL,
     )
