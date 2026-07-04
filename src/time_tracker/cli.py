@@ -45,9 +45,19 @@ def _today_local() -> datetime:
 
 
 def _resolve_date(date: str | None) -> datetime:
-    """A datetime anchored on the requested local date (defaults to today)."""
+    """A datetime anchored on the requested local date (defaults to today).
+
+    Accepts ISO dates plus the relative words ``today``/``yesterday``/``tomorrow``
+    and signed day offsets like ``-1`` / ``+2`` (relative to today, local time).
+    """
     if not date:
         return _today_local()
+    word = date.strip().lower()
+    offsets = {"today": 0, "yesterday": -1, "tomorrow": 1}
+    if word in offsets:
+        return _today_local() + timedelta(days=offsets[word])
+    if word.lstrip("+-").isdigit() and word not in ("", "+", "-"):
+        return _today_local() + timedelta(days=int(word))
     d = datetime.fromisoformat(date)
     return d.replace(tzinfo=timeutil.local_tz()) if d.tzinfo is None else d
 
@@ -219,6 +229,7 @@ def day(date: str = typer.Argument(None, help="ISO date, defaults to today.")):
     table = Table(title=f"Timeline — {timeutil.local_date_key(target)}")
     table.add_column("Time")
     table.add_column("Type")
+    table.add_column("Category", no_wrap=True, max_width=16, overflow="ellipsis")
     table.add_column("What")
 
     rows = []
@@ -226,17 +237,17 @@ def day(date: str = typer.Argument(None, help="ISO date, defaults to today.")):
                                       excluded_color_ids=config.excluded_color_ids,
                                       excluded_event_types=config.excluded_event_types):
         rows.append((ev.start_ts, f"{_local(ev.start_ts)}-{_local(ev.end_ts)}",
-                     "meeting", ev.title))
+                     "meeting", ev.category or "", ev.title))
     for e in db.list_entries(start_iso, end_iso):
         end = _local(e.end_ts) if e.end_ts else "…"
         rows.append((e.start_ts, f"{_local(e.start_ts)}-{end}",
-                     e.source.value, e.description or e.category or ""))
+                     e.source.value, e.category or "", e.description or ""))
     for g in backfill.find_day_gaps(db, config, target):
         rows.append((g.start, f"{_local(g.start)}-{_local(g.end)}",
-                     "[yellow]gap[/yellow]", _fmt_dur(g.seconds)))
+                     "[yellow]gap[/yellow]", "", _fmt_dur(g.seconds)))
 
-    for _, time_s, typ, what in sorted(rows, key=lambda r: r[0]):
-        table.add_row(time_s, typ, what)
+    for _, time_s, typ, cat, what in sorted(rows, key=lambda r: r[0]):
+        table.add_row(time_s, typ, cat, what)
     console.print(table)
 
 
@@ -503,6 +514,15 @@ def remind_clock_in():
 def remind_checkin():
     """(launchd) Fire the periodic check-in banner."""
     notify.notify("Time Tracker", "What are you working on? Run `tt checkin`.")
+
+
+# --- Short aliases -----------------------------------------------------------
+# Register the same command functions under terse names for day-to-day brevity.
+# Hidden so `--help` stays uncluttered; documented in docs/guide.html.
+app.command(name="td", hidden=True)(day)
+app.command(name="tl", hidden=True)(log)
+app.command(name="ci", hidden=True)(checkin)
+app.command(name="rc", hidden=True)(recat)
 
 
 if __name__ == "__main__":

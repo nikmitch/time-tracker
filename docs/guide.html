@@ -89,6 +89,11 @@ Your data is stored centrally (see <a href="#data">Where your data lives</a>), s
 <tr><td><code>tt --help</code></td><td>List all commands; <code>tt &lt;command&gt; --help</code> for details on one.</td></tr>
 </table>
 
+<div class="note"><strong>Shortcuts.</strong> Any command taking a date accepts
+<code>today</code>, <code>yesterday</code>, <code>tomorrow</code>, or a signed day offset like <code>-1</code> in place of an ISO date — e.g. <code>tt day yesterday</code>, <code>tt log 09:00 10:00 "x" --date -1</code>.
+There are also terse aliases for the commands you type most: <code>td</code> → <code>tt day</code>, <code>tl</code> → <code>tt log</code>, <code>ci</code> → <code>tt checkin</code>, <code>rc</code> → <code>tt recat</code>.
+</div>
+
 <h2 id="workflow">A typical day</h2>
 <div class="card">
 <pre><code># Morning — when you actually sit down (before any meetings)

@@ -114,6 +114,39 @@ def test_recat_interactive_refuses_non_interactive(env):
     assert "terminal" in r.stdout
 
 
+def test_resolve_date_relative_words():
+    from time_tracker.cli import _resolve_date, _today_local
+    from time_tracker.core import timeutil
+    today = timeutil.local_date_key(_today_local())
+    yday = timeutil.local_date_key(_resolve_date("yesterday"))
+    tmrw = timeutil.local_date_key(_resolve_date("tomorrow"))
+    assert yday < today < tmrw
+    assert timeutil.local_date_key(_resolve_date("-2")) < yday
+
+
+def test_day_accepts_relative_date(env):
+    r = runner.invoke(app, ["day", "yesterday"])
+    assert r.exit_code == 0
+    assert "Timeline" in r.stdout
+
+
+def test_day_has_category_column(env):
+    runner.invoke(app, ["log", "09:00", "10:00", "spec", "-c", "dev"])
+    r = runner.invoke(app, ["day"])
+    assert r.exit_code == 0
+    assert "Category" in r.stdout
+
+
+def test_aliases_match_targets(env):
+    # `td` behaves like `day`
+    assert runner.invoke(app, ["td"]).exit_code == 0
+    assert "Timeline" in runner.invoke(app, ["td"]).stdout
+    # `tl` behaves like `log`
+    r = runner.invoke(app, ["tl", "09:00", "10:00", "x", "-c", "dev"])
+    assert r.exit_code == 0
+    assert "Logged" in r.stdout
+
+
 def test_end_to_end_all_capture_modes(env):
     # timer
     runner.invoke(app, ["start", "-c", "dev", "-d", "coding"])
