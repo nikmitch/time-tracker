@@ -13,6 +13,7 @@ dependencies = [
     "questionary>=2.0",
     "google-api-python-client>=2.130",
     "google-auth-oauthlib>=1.2",
+    "matplotlib>=3.8",
 ]
 
 [project.optional-dependencies]

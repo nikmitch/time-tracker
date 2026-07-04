@@ -62,6 +62,27 @@ def test_report_runs(env):
     assert "Report" in r.stdout
 
 
+def test_report_html_writes_file(env, monkeypatch):
+    import time_tracker.cli as cli
+    opened = []
+    monkeypatch.setattr("webbrowser.open", lambda u: opened.append(u))
+    # Point the reports dir at the temp DB's parent (env fixture's tmp dir).
+    monkeypatch.setattr(cli, "DEFAULT_DB_PATH", env)
+    runner.invoke(app, ["in"])
+    runner.invoke(app, ["log", "09:00", "10:00", "spec", "-c", "dev"])
+    runner.invoke(app, ["out"])
+    r = runner.invoke(app, ["report", "week", "--html"])
+    assert r.exit_code == 0
+    assert "Wrote" in r.stdout
+    reports_dir = env.parent / "reports"
+    files = list(reports_dir.glob("report-week-*.html"))
+    assert files, "no HTML report written"
+    content = files[0].read_text()
+    assert content.startswith("<!DOCTYPE html>")
+    assert "dev" in content
+    assert opened == []  # non-TTY under CliRunner: file written, browser not opened
+
+
 def test_help(env):
     r = runner.invoke(app, ["--help"])
     assert r.exit_code == 0

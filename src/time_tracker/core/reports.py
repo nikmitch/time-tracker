@@ -15,7 +15,20 @@ from ..config import Config
 from ..db import Database
 from . import workday
 from .timeline import Interval, find_gaps, merge_intervals
-from .timeutil import local_date_key
+from .timeutil import local_date_key, local_day_bounds
+
+
+@dataclass
+class ReportData:
+    """Everything a report view needs for a period, rendering-agnostic.
+
+    Produced by :func:`gather_report` so the CLI tables, the matplotlib charts,
+    and any future front-end all consume the same aggregated numbers.
+    """
+
+    period_label: str
+    summaries: list["DaySummary"]        # one per day that has a workday
+    category_totals: dict[str, float]    # seconds, entries + categorized meetings
 
 
 @dataclass
@@ -120,6 +133,35 @@ def workday_lengths(
         else:
             out.append((local_date_key(d), 0.0))
     return out
+
+
+def gather_report(
+    db: Database, config: Config, start: datetime, days: int
+) -> ReportData:
+    """Aggregate per-day summaries and category totals for ``days`` from ``start``.
+
+    Matplotlib-free and pure so the numbers are testable independently of any
+    chart layer. Mirrors what the CLI ``report`` command previously computed
+    inline: ``day_summary`` per day plus ``category_breakdown`` accumulated
+    across the period.
+    """
+    summaries: list[DaySummary] = []
+    category_totals: dict[str, float] = defaultdict(float)
+    for i in range(days):
+        d = start + timedelta(days=i)
+        day_start, day_end = local_day_bounds(d)
+        s = day_summary(db, config, d)
+        if s is not None:
+            summaries.append(s)
+        for k, v in category_breakdown(
+            db, day_start.isoformat(), day_end.isoformat(), config
+        ).items():
+            category_totals[k] += v
+    return ReportData(
+        period_label=f"last {days} day(s)",
+        summaries=summaries,
+        category_totals=dict(category_totals),
+    )
 
 
 def _clipped_seconds(intervals: list[Interval], window: Interval) -> float:

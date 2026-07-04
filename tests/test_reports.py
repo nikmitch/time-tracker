@@ -85,6 +85,31 @@ def test_fragmentation_metric(db: Database):
     assert s.fragmentation == 1.0  # 2 gaps / 2 hours
 
 
+def test_gather_report_aggregates_day(db: Database):
+    workday.clock_in(db, ts=at(9))
+    workday.clock_out(db, ts=at(17))
+    db.upsert_calendar_event(CalendarEvent(
+        gcal_id="m", title="Sync", start_ts=at(10), end_ts=at(11),
+        color_id="7", category="Team meetings", category_source="rule"))
+    backfill.fill_gap(db, at(13), at(15), "deep work", category="dev")
+    data = reports.gather_report(db, _cfg(), at(12), days=1)
+    assert len(data.summaries) == 1
+    assert data.summaries[0].workday_seconds == 8 * 3600
+    assert data.category_totals["dev"] == 2 * 3600
+    assert data.category_totals["Team meetings"] == 3600
+    assert "day(s)" in data.period_label
+
+
+def test_gather_report_week_skips_empty_days(db: Database):
+    workday.clock_in(db, ts=at(9))
+    workday.clock_out(db, ts=at(17))
+    backfill.fill_gap(db, at(10), at(11), "x", category="dev")
+    data = reports.gather_report(db, _cfg(), at(0), days=7)
+    # Only the one day with a workday produces a summary.
+    assert len(data.summaries) == 1
+    assert data.category_totals["dev"] == 3600
+
+
 def test_workday_lengths_trend(db: Database):
     workday.clock_in(db, ts=at(9))
     workday.clock_out(db, ts=at(17))

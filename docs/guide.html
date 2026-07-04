@@ -84,6 +84,7 @@ Your data is stored centrally (see <a href="#data">Where your data lives</a>), s
 <tr><td><code>tt sync [--days N]</code></td><td>Pull meetings from Google Calendar (±N days, default 7). Meetings are auto-tagged with a category if their title matches a rule in <code>meeting_category_rules</code> (see below).</td></tr>
 <tr><td><code>tt meeting [--date]</code></td><td>Pick a meeting from a day and set its category by hand. This manual choice is an <em>override</em> — <code>tt sync</code> will never overwrite it, even if a title rule would say otherwise.</td></tr>
 <tr><td><code>tt report [day|week]</code></td><td>Summarise meeting vs focus vs idle time, fragmentation, and time-by-category (categorized meetings are folded into the by-category totals).</td></tr>
+<tr><td><code>tt report [day|week] --html</code></td><td>Render an offline HTML report (matplotlib time-by-category bar chart + per-day meetings/focus/idle breakdown + the by-day table) to <code>~/.time_tracker/reports/</code> and open it in your browser.</td></tr>
 <tr><td><code>tt install-reminders</code></td><td>Set up macOS notifications (daily clock-in + periodic check-in).</td></tr>
 <tr><td><code>tt uninstall-reminders</code></td><td>Remove those notifications.</td></tr>
 <tr><td><code>tt --help</code></td><td>List all commands; <code>tt &lt;command&gt; --help</code> for details on one.</td></tr>

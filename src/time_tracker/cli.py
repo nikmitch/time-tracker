@@ -451,38 +451,57 @@ def log(
 
 
 @app.command()
-def report(period: str = typer.Argument("day", help="'day' or 'week'.")):
-    """Summarise where time went (meeting vs focus vs idle)."""
+def report(
+    period: str = typer.Argument("day", help="'day' or 'week'."),
+    html: bool = typer.Option(False, "--html", help="Write an HTML report and open it."),
+):
+    """Summarise where time went (meeting vs focus vs idle).
+
+    With --html, render an offline HTML report (charts + per-day table) to
+    ~/.time_tracker/reports/ and open it in your browser.
+    """
     db = get_db()
     config = load_config()
-    today = _today_local()
     days = 7 if period == "week" else 1
-    start = today - timedelta(days=days - 1)
+    start = _today_local() - timedelta(days=days - 1)
+    data = reports.gather_report(db, config, start, days)
 
-    table = Table(title=f"Report — last {days} day(s)")
+    if html:
+        _write_html_report(period, data)
+        return
+
+    table = Table(title=f"Report — {data.period_label}")
     for col in ("Date", "Workday", "Meetings", "Focus", "Idle", "Frag."):
         table.add_column(col)
-    cat_totals: dict[str, float] = {}
-    for i in range(days):
-        d = start + timedelta(days=i)
-        day_start_utc, day_end_utc = timeutil.local_day_bounds(d)
-        s = reports.day_summary(db, config, d)
-        if s is not None:
-            table.add_row(s.date, _fmt_dur(s.workday_seconds),
-                          _fmt_dur(s.meeting_seconds), _fmt_dur(s.logged_seconds),
-                          _fmt_dur(s.idle_seconds), f"{s.fragmentation:.1f}/h")
-        for k, v in reports.category_breakdown(
-            db, day_start_utc.isoformat(),
-            day_end_utc.isoformat(), config).items():
-            cat_totals[k] = cat_totals.get(k, 0) + v
+    for s in data.summaries:
+        table.add_row(s.date, _fmt_dur(s.workday_seconds),
+                      _fmt_dur(s.meeting_seconds), _fmt_dur(s.logged_seconds),
+                      _fmt_dur(s.idle_seconds), f"{s.fragmentation:.1f}/h")
     console.print(table)
-    if cat_totals:
+    if data.category_totals:
         cat = Table(title="By category")
         cat.add_column("Category")
         cat.add_column("Time")
-        for k, v in sorted(cat_totals.items(), key=lambda x: -x[1]):
+        for k, v in sorted(data.category_totals.items(), key=lambda x: -x[1]):
             cat.add_row(k, _fmt_dur(v))
         console.print(cat)
+
+
+def _write_html_report(period: str, data: "reports.ReportData") -> None:
+    """Render an HTML report, save it under the data dir, and open it (if a TTY)."""
+    import webbrowser
+    from datetime import datetime as _dt
+
+    from .core import charts
+
+    reports_dir = DEFAULT_DB_PATH.parent / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    stamp = _dt.now().strftime("%Y%m%d-%H%M%S")
+    path = reports_dir / f"report-{period}-{stamp}.html"
+    path.write_text(charts.build_report_html(data))
+    console.print(f"[green]Wrote[/green] {path}")
+    if _is_interactive():
+        webbrowser.open(path.as_uri())
 
 
 @app.command(name="install-reminders")
