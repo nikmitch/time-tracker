@@ -329,6 +329,48 @@ def delete(
 
 
 @app.command()
+def recat(
+    category: str = typer.Argument(..., help="Existing category to recategorize."),
+    new: str = typer.Argument(None, help="Rename target. Omit for interactive per-entry reassign."),
+):
+    """Recategorize entries.
+
+    `tt recat OLD NEW` bulk-renames every entry in OLD to NEW. With just
+    `tt recat OLD`, interactively pick which of OLD's entries to move to another
+    (or new) category — e.g. splitting "fellows" out of a broader chat category.
+    """
+    db = get_db()
+    if new is not None:
+        n = db.rename_category(category, new)
+        console.print(f"[green]Renamed[/green] '{category}' → '{new}' ({n} entries)")
+        return
+
+    if not _is_interactive():
+        console.print("[red]Interactive recat requires a terminal (or pass a rename target).[/red]")
+        raise typer.Exit(1)
+
+    entries = [e for e in db.list_entries()
+               if (e.category or None) == category and e.end_ts is not None]
+    if not entries:
+        console.print(f"[yellow]No entries found in category '{category}'.[/yellow]")
+        return
+    labels = {
+        f"{timeutil.local_date_key(e.start_ts)} {_local(e.start_ts)}-{_local(e.end_ts)}  "
+        f"{e.description or ''}": e
+        for e in entries
+    }
+    picked = questionary.checkbox("Select entries to move:", choices=list(labels)).ask()
+    if not picked:
+        console.print("Nothing selected.")
+        return
+    target = _pick_or_type(db, "Move to category:", "category", None)
+    for label in picked:
+        db.set_entry_category(labels[label].id, target)
+    console.print(f"[green]Moved[/green] {len(picked)} entries to "
+                  f"'{target or '(uncategorized)'}'")
+
+
+@app.command()
 def meeting(
     date: str = typer.Option(None, "--date", help="ISO date to pick from (default today)."),
 ):

@@ -210,6 +210,22 @@ class Database:
         with self._tx() as conn:
             conn.execute("DELETE FROM time_entry WHERE id = ?", (entry_id,))
 
+    def rename_category(self, old: str, new: str) -> int:
+        """Rename a category across all time entries. Returns rows changed."""
+        with self._tx() as conn:
+            cur = conn.execute(
+                "UPDATE time_entry SET category = ? WHERE category = ?", (new, old)
+            )
+            return cur.rowcount
+
+    def set_entry_category(self, entry_id: int, category: Optional[str]) -> None:
+        """Set the category on a single entry (used by interactive recat)."""
+        with self._tx() as conn:
+            conn.execute(
+                "UPDATE time_entry SET category = ?, updated_at = ? WHERE id = ?",
+                (category, to_iso(utcnow()), entry_id),
+            )
+
     # ----- CalendarEvent --------------------------------------------------
 
     def upsert_calendar_event(self, event: CalendarEvent) -> CalendarEvent:

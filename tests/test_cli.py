@@ -97,6 +97,23 @@ def test_delete_refuses_non_interactive(env):
     assert "interactive" in r.stdout
 
 
+def test_recat_bulk_rename(env):
+    runner.invoke(app, ["log", "09:00", "10:00", "a", "-c", "MATS chats"])
+    runner.invoke(app, ["log", "10:00", "11:00", "b", "-c", "MATS chats"])
+    r = runner.invoke(app, ["recat", "MATS chats", "MATS workplace"])
+    assert r.exit_code == 0
+    assert "2 entries" in r.stdout
+    day = runner.invoke(app, ["report", "day"])
+    assert "MATS workplace" in day.stdout
+
+
+def test_recat_interactive_refuses_non_interactive(env):
+    runner.invoke(app, ["log", "09:00", "10:00", "a", "-c", "chats"])
+    r = runner.invoke(app, ["recat", "chats"])
+    assert r.exit_code == 1
+    assert "terminal" in r.stdout
+
+
 def test_end_to_end_all_capture_modes(env):
     # timer
     runner.invoke(app, ["start", "-c", "dev", "-d", "coding"])

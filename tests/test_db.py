@@ -97,6 +97,18 @@ def test_delete_entry(db: Database):
     assert db.get_entry(e.id) is None
 
 
+def test_rename_and_set_category(db: Database):
+    db.create_entry(_entry(9, category="old"))
+    db.create_entry(_entry(10, category="old"))
+    other = db.create_entry(_entry(11, category="keep"))
+    changed = db.rename_category("old", "new")
+    assert changed == 2
+    cats = sorted(e.category for e in db.list_entries())
+    assert cats == ["keep", "new", "new"]
+    db.set_entry_category(other.id, "moved")
+    assert db.get_entry(other.id).category == "moved"
+
+
 def test_running_entry_has_null_end(db: Database):
     running = db.create_entry(_entry(9, dur_min=None))
     assert running.is_running
