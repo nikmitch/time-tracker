@@ -90,6 +90,21 @@ class Database:
     def init_schema(self) -> None:
         self.conn.executescript(SCHEMA)
         self.conn.commit()
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Apply idempotent schema tweaks the plain ``CREATE`` above can't express.
+
+        SQLite's ``CREATE TABLE IF NOT EXISTS`` never alters an existing table,
+        so column additions/removals for already-created DBs live here. Each step
+        is guarded by ``_has_column`` so re-running is a no-op.
+        """
+        with self._tx() as conn:
+            pass  # migration steps are added by later features
+
+    def _has_column(self, table: str, column: str) -> bool:
+        rows = self.conn.execute(f"PRAGMA table_info({table})").fetchall()
+        return any(r["name"] == column for r in rows)
 
     def close(self) -> None:
         self.conn.close()

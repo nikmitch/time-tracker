@@ -1,0 +1,11 @@
+- remove project field
+- make category field fit in `tt day` output
+- separate out "thinking/talking about fellows" from "MATS workplace-related chats" as categories and recategorise retrospectively
+- incorporate category auto-detection for meetings
+- editing functionality for meetings from Gcal?
+    - Make sure edits aren't reversed if I do `tt sync`
+- usability
+    - aliases/cli brevity for e.g. "yesterday", or "td = tt day", tl = tt log etc
+
+
+Long term - maybe turn this into a day planner tool that I can access from my phone at the start of the day via voice input

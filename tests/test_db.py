@@ -28,6 +28,14 @@ def test_schema_creates_tables(db: Database):
     assert {"time_entry", "calendar_event", "workday", "category", "project"} <= names
 
 
+def test_has_column_and_migrate_is_idempotent(db: Database):
+    assert db._has_column("time_entry", "category")
+    assert not db._has_column("time_entry", "nonexistent")
+    # Re-running the migration must be a harmless no-op.
+    db._migrate()
+    db.init_schema()
+
+
 def test_create_and_get_entry(db: Database):
     created = db.create_entry(_entry(9, category="dev", description="work"))
     assert created.id is not None
