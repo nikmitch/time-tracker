@@ -161,10 +161,16 @@ day, meetings come in automatically, and you fill the gaps with whichever captur
 </ul>
 </div>
 
-<div class="note"><strong>Auto-categorizing meetings.</strong> Add keyword→category rules to
-<code>~/.time_tracker/config.toml</code> and every synced meeting whose title contains a keyword is tagged automatically (first match wins):
-<pre><code>meeting_category_rules = [{ match = "MATS", category = "MATS workplace" }, { match = "fellow", category = "fellows" }]</code></pre>
-Need to fix a single meeting? <code>tt meeting</code> sets a manual category that <code>tt sync</code> will never overwrite.
+<div class="note"><strong>Auto-categorizing meetings.</strong> Add rules to
+<code>~/.time_tracker/config.toml</code> and every synced meeting is tagged automatically. Each rule matches on a Google Calendar <code>color</code> (its <code>colorId</code>) and/or a title <code>match</code> substring; rules are tried in order and the first match wins. A rule with only a <code>category</code> (no matchers) is a catch-all — put it last, or omit it to leave unmatched meetings untagged.
+<pre><code>meeting_category_rules = [
+  { color = "3",  category = "fellow 1:1s" },
+  { color = "6",  category = "non-fellow meetings" },
+  { color = "10", category = "stream meetings" },
+  { color = "8",  category = "social" },
+  { color = "11", category = "personal" },
+]</code></pre>
+Colour is the primary signal; add a <code>{ match = "…", category = "…" }</code> rule <em>above</em> the colour rules to carve a title-based exception out of a colour. Need to fix a single meeting? <code>tt meeting</code> sets a manual category that <code>tt sync</code> will never overwrite.
 </div>
 
 <h2 id="reminders">Reminder notifications</h2>

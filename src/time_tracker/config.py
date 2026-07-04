@@ -28,8 +28,9 @@ class Config:
     # Soft work-hours window for views/inference fallback (local "HH:MM").
     work_hours_start: str = "08:00"
     work_hours_end: str = "18:00"
-    # Keyword→category rules that auto-tag meetings by title (first match wins).
-    # Each rule is {"match": <substring>, "category": <name>}.
+    # Rules that auto-tag meetings on sync (first match wins). Each rule is
+    # {"color": <colorId>, "match": <title substring>, "category": <name>} where
+    # color and/or match are optional; a rule with neither is a catch-all.
     meeting_category_rules: list[dict] = field(default_factory=list)
 
     def to_toml(self) -> str:
