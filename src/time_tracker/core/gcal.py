@@ -150,7 +150,9 @@ def sync_calendar(
         if "start" not in raw or "end" not in raw:
             continue
         event = parse_event(raw)
-        cat = categorize_meeting(event.title, event.color_id, rules)
+        cat = categorize_meeting(
+            event.title, event.color_id, event.attendees_count, rules
+        )
         if cat is not None:
             event.category = cat
             event.category_source = "rule"

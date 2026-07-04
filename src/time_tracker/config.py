@@ -29,8 +29,9 @@ class Config:
     work_hours_start: str = "08:00"
     work_hours_end: str = "18:00"
     # Rules that auto-tag meetings on sync (first match wins). Each rule is
-    # {"color": <colorId>, "match": <title substring>, "category": <name>} where
-    # color and/or match are optional; a rule with neither is a catch-all.
+    # {"color": <colorId>, "match": <title substring>, "min_attendees": <int>,
+    # "max_attendees": <int>, "category": <name>} where every key except category
+    # is optional; a rule with no matchers is a catch-all.
     meeting_category_rules: list[dict] = field(default_factory=list)
 
     def to_toml(self) -> str:
