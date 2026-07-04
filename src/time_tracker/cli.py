@@ -453,12 +453,13 @@ def log(
 @app.command()
 def report(
     period: str = typer.Argument("day", help="'day' or 'week'."),
-    html: bool = typer.Option(False, "--html", help="Write an HTML report and open it."),
+    text: bool = typer.Option(False, "--text", help="Print plain terminal tables instead of the HTML report."),
 ):
     """Summarise where time went (meeting vs focus vs idle).
 
-    With --html, render an offline HTML report (charts + per-day table) to
-    ~/.time_tracker/reports/ and open it in your browser.
+    By default renders an offline HTML report (charts + per-day table) to
+    ~/.time_tracker/reports/ and opens it in your browser. Use --text for a
+    quick terminal-only summary (handy over SSH / when piping).
     """
     db = get_db()
     config = load_config()
@@ -466,7 +467,7 @@ def report(
     start = _today_local() - timedelta(days=days - 1)
     data = reports.gather_report(db, config, start, days)
 
-    if html:
+    if not text:
         _write_html_report(period, data)
         return
 

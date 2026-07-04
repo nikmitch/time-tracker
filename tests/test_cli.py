@@ -53,16 +53,16 @@ def test_day_view(env):
     assert "Timeline" in r.stdout
 
 
-def test_report_runs(env):
+def test_report_text_mode(env):
     runner.invoke(app, ["in"])
     runner.invoke(app, ["start", "-c", "dev"])
     runner.invoke(app, ["stop"])
-    r = runner.invoke(app, ["report", "day"])
+    r = runner.invoke(app, ["report", "day", "--text"])
     assert r.exit_code == 0
     assert "Report" in r.stdout
 
 
-def test_report_html_writes_file(env, monkeypatch):
+def test_report_defaults_to_html(env, monkeypatch):
     import time_tracker.cli as cli
     opened = []
     monkeypatch.setattr("webbrowser.open", lambda u: opened.append(u))
@@ -71,7 +71,7 @@ def test_report_html_writes_file(env, monkeypatch):
     runner.invoke(app, ["in"])
     runner.invoke(app, ["log", "09:00", "10:00", "spec", "-c", "dev"])
     runner.invoke(app, ["out"])
-    r = runner.invoke(app, ["report", "week", "--html"])
+    r = runner.invoke(app, ["report", "week"])  # no flag → HTML by default
     assert r.exit_code == 0
     assert "Wrote" in r.stdout
     reports_dir = env.parent / "reports"
@@ -124,7 +124,7 @@ def test_recat_bulk_rename(env):
     r = runner.invoke(app, ["recat", "MATS chats", "MATS workplace"])
     assert r.exit_code == 0
     assert "2 entries" in r.stdout
-    day = runner.invoke(app, ["report", "day"])
+    day = runner.invoke(app, ["report", "day", "--text"])
     assert "MATS workplace" in day.stdout
 
 
