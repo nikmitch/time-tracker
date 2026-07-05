@@ -29,6 +29,7 @@ class ReportData:
     period_label: str
     summaries: list["DaySummary"]        # one per day that has a workday
     category_totals: dict[str, float]    # seconds, entries + categorized meetings
+    daily: list[dict]                    # per day: {date, categories:{..}, idle}
 
 
 @dataclass
@@ -146,6 +147,50 @@ def workday_lengths(
     return out
 
 
+OTHER_GROUP = "Other"
+OTHER_COLOR = "#888780"
+
+
+def grouped_breakdown(
+    category_totals: dict[str, float], groups: list[dict]
+) -> list[dict]:
+    """Roll fine category totals into the configured two-level taxonomy.
+
+    Returns an ordered list of
+    ``{"group", "color", "subtotal", "items": [(category, seconds), ...]}``,
+    groups in config order, subcategories within each sorted by time descending.
+    Any category not claimed by a group falls into a trailing ``Other`` band.
+    """
+    claimed: set[str] = set()
+    out: list[dict] = []
+    for g in groups:
+        items = [
+            (c, category_totals[c])
+            for c in g.get("categories", [])
+            if category_totals.get(c)
+        ]
+        claimed.update(g.get("categories", []))
+        if not items:
+            continue
+        # items already follow the config order of g["categories"].
+        out.append({
+            "group": g["group"],
+            "color": g.get("color", OTHER_COLOR),
+            "subtotal": sum(v for _, v in items),
+            "items": items,
+        })
+    leftover = [(c, v) for c, v in category_totals.items() if c not in claimed]
+    if leftover:
+        leftover.sort(key=lambda kv: -kv[1])
+        out.append({
+            "group": OTHER_GROUP,
+            "color": OTHER_COLOR,
+            "subtotal": sum(v for _, v in leftover),
+            "items": leftover,
+        })
+    return out
+
+
 def gather_report(
     db: Database, config: Config, start: datetime, days: int
 ) -> ReportData:
@@ -158,20 +203,24 @@ def gather_report(
     """
     summaries: list[DaySummary] = []
     category_totals: dict[str, float] = defaultdict(float)
+    daily: list[dict] = []
     for i in range(days):
         d = start + timedelta(days=i)
         day_start, day_end = local_day_bounds(d)
         s = day_summary(db, config, d)
+        day_cats = category_breakdown(
+            db, day_start.isoformat(), day_end.isoformat(), config
+        )
+        for k, v in day_cats.items():
+            category_totals[k] += v
         if s is not None:
             summaries.append(s)
-        for k, v in category_breakdown(
-            db, day_start.isoformat(), day_end.isoformat(), config
-        ).items():
-            category_totals[k] += v
+            daily.append({"date": s.date, "categories": day_cats, "idle": s.idle_seconds})
     return ReportData(
         period_label=f"last {days} day(s)",
         summaries=summaries,
         category_totals=dict(category_totals),
+        daily=daily,
     )
 
 

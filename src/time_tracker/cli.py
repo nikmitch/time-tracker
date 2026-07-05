@@ -499,7 +499,7 @@ def _write_html_report(period: str, data: "reports.ReportData") -> None:
     reports_dir.mkdir(parents=True, exist_ok=True)
     stamp = _dt.now().strftime("%Y%m%d-%H%M%S")
     path = reports_dir / f"report-{period}-{stamp}.html"
-    path.write_text(charts.build_report_html(data))
+    path.write_text(charts.build_report_html(data, load_config().category_groups))
     console.print(f"[green]Wrote[/green] {path}")
     if _is_interactive():
         webbrowser.open(path.as_uri())

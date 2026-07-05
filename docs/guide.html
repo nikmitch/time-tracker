@@ -83,7 +83,7 @@ Your data is stored centrally (see <a href="#data">Where your data lives</a>), s
 <tr><td><code>tt day [date]</code></td><td>Show the day's timeline: meetings, logged entries, and open <em>gaps</em>. Defaults to today.</td></tr>
 <tr><td><code>tt sync [--days N]</code></td><td>Pull meetings from Google Calendar (±N days, default 7). Meetings are auto-tagged with a category if their title matches a rule in <code>meeting_category_rules</code> (see below).</td></tr>
 <tr><td><code>tt meeting [--date]</code></td><td>Pick a meeting from a day and set its category by hand. This manual choice is an <em>override</em> — <code>tt sync</code> will never overwrite it, even if a title rule would say otherwise.</td></tr>
-<tr><td><code>tt report [week|day]</code></td><td>Render an offline HTML report — a matplotlib time-by-category bar chart, a per-day meetings/focus/idle breakdown, and the by-day table (categorized meetings folded into the totals) — to <code>~/.time_tracker/reports/</code> and open it in your browser. Defaults to the week; pass <code>day</code> for just today. Add <code>--text</code> for a quick terminal-only summary instead (handy over SSH / when piping). Where a logged entry overlaps a meeting, the entry wins — that time counts once, under the entry's category — so totals never double-count.</td></tr>
+<tr><td><code>tt report [week|day]</code></td><td>Render an offline HTML report — a grouped time-by-category bar chart (subcategories shaded within each group), a per-day breakdown coloured by group, and totals/subtotals tables — to <code>~/.time_tracker/reports/</code> and open it in your browser. Defaults to the week; pass <code>day</code> for just today. Add <code>--text</code> for a quick terminal-only summary instead (handy over SSH / when piping). Where a logged entry overlaps a meeting, the entry wins — that time counts once, under the entry's category — so totals never double-count.</td></tr>
 <tr><td><code>tt install-reminders</code></td><td>Set up macOS notifications (daily clock-in + periodic check-in).</td></tr>
 <tr><td><code>tt uninstall-reminders</code></td><td>Remove those notifications.</td></tr>
 <tr><td><code>tt --help</code></td><td>List all commands; <code>tt &lt;command&gt; --help</code> for details on one.</td></tr>
@@ -172,6 +172,15 @@ day, meetings come in automatically, and you fill the gaps with whichever captur
   { min_attendees = 3, category = "Team meetings" },  # multi-person, any colour left over
 ]</code></pre>
 Colour is the primary signal; add a <code>{ match = "…", category = "…" }</code> rule <em>above</em> the colour rules to carve a title-based exception out of a colour, and use <code>min_attendees</code> to split big team meetings from 1-2 person ones. Need to fix a single meeting? <code>tt meeting</code> sets a manual category that <code>tt sync</code> will never overwrite.
+</div>
+
+<div class="note"><strong>Grouping categories in the report.</strong> Define broad groups over your fine categories with <code>category_groups</code> in <code>config.toml</code>; the HTML report then shows group subtotals and colours each group's subcategories as shades of one hue (e.g. meeting types as shades of blue). Categories you don't list fall into an "Other" band.
+<pre><code>category_groups = [
+  { group = "Meetings", color = "#2a78d6", categories = ["Team meetings", "Fellow 1:1s", "Non-fellow meetings", "Stream meetings"] },
+  { group = "Chats",    color = "#1baf7a", categories = ["Work-related chats"] },
+  { group = "Admin",    color = "#eda100", categories = ["Admin"] },
+  { group = "Personal", color = "#6a5acd", categories = ["Personal"] },
+]</code></pre>
 </div>
 
 <h2 id="reminders">Reminder notifications</h2>

@@ -13,6 +13,21 @@ from pathlib import Path
 DEFAULT_CONFIG_PATH = Path.home() / ".time_tracker" / "config.toml"
 
 
+def _render_toml(value) -> str:
+    """Serialize a Python value to a TOML fragment (recursive; inline tables)."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return f'"{value}"'
+    if isinstance(value, dict):
+        return "{ " + ", ".join(f"{k} = {_render_toml(v)}" for k, v in value.items()) + " }"
+    if isinstance(value, list):
+        return "[" + ", ".join(_render_toml(v) for v in value) + "]"
+    raise TypeError(f"Cannot render {type(value)!r} to TOML")
+
+
 @dataclass
 class Config:
     """User-tunable settings with sensible defaults."""
@@ -33,25 +48,16 @@ class Config:
     # "max_attendees": <int>, "category": <name>} where every key except category
     # is optional; a rule with no matchers is a catch-all.
     meeting_category_rules: list[dict] = field(default_factory=list)
+    # Two-level taxonomy: broad groups that roll up fine categories for report
+    # subtotals + shaded colouring. Each entry is
+    # {"group": <name>, "color": <hex>, "categories": [<category>, ...]}.
+    # Categories not listed in any group fall into an "Other" band.
+    category_groups: list[dict] = field(default_factory=list)
 
     def to_toml(self) -> str:
         lines = ["# Time Tracker configuration", ""]
         for key, value in asdict(self).items():
-            if isinstance(value, list) and all(isinstance(v, dict) for v in value):
-                items = ", ".join(
-                    "{ "
-                    + ", ".join(f'{k} = "{iv}"' for k, iv in rule.items())
-                    + " }"
-                    for rule in value
-                )
-                rendered = f"[{items}]"
-            elif isinstance(value, list):
-                rendered = "[" + ", ".join(f'"{v}"' for v in value) + "]"
-            elif isinstance(value, str):
-                rendered = f'"{value}"'
-            else:
-                rendered = str(value)
-            lines.append(f"{key} = {rendered}")
+            lines.append(f"{key} = {_render_toml(value)}")
         return "\n".join(lines) + "\n"
 
 

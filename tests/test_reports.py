@@ -126,6 +126,23 @@ def test_gather_report_aggregates_day(db: Database):
     assert "day(s)" in data.period_label
 
 
+def test_grouped_breakdown_rolls_up_in_config_order():
+    groups = [
+        {"group": "Meetings", "color": "#2a78d6",
+         "categories": ["Team meetings", "Fellow 1:1s"]},
+        {"group": "Admin", "color": "#eda100", "categories": ["Admin"]},
+    ]
+    totals = {"Fellow 1:1s": 3600, "Team meetings": 7200, "Admin": 1800, "Reading": 900}
+    grouped = reports.grouped_breakdown(totals, groups)
+    assert [b["group"] for b in grouped] == ["Meetings", "Admin", "Other"]
+    meetings = grouped[0]
+    assert meetings["subtotal"] == 10800
+    # Config order preserved (Team meetings before Fellow 1:1s), not by size.
+    assert [c for c, _ in meetings["items"]] == ["Team meetings", "Fellow 1:1s"]
+    # Unlisted category lands in the trailing Other band.
+    assert grouped[-1]["items"] == [("Reading", 900)]
+
+
 def test_gather_report_week_skips_empty_days(db: Database):
     workday.clock_in(db, ts=at(9))
     workday.clock_out(db, ts=at(17))
