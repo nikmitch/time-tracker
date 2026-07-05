@@ -452,7 +452,7 @@ def log(
 
 @app.command()
 def report(
-    period: str = typer.Argument("day", help="'day' or 'week'."),
+    period: str = typer.Argument("week", help="'week' (default) or 'day'."),
     text: bool = typer.Option(False, "--text", help="Print plain terminal tables instead of the HTML report."),
 ):
     """Summarise where time went (meeting vs focus vs idle).
