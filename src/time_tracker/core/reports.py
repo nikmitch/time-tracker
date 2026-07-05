@@ -58,20 +58,26 @@ def category_breakdown(
     Counts completed time entries and, when ``config`` is given, categorized
     meetings (non-excluded). Meetings without a category are ignored here so the
     breakdown stays about *how* time was categorized, not raw meeting volume.
+
+    Entries win over meetings: where a logged entry overlaps a meeting, that
+    time is attributed to the entry's category only and clipped out of the
+    meeting, so no interval is counted twice.
     """
     totals: dict[str, float] = defaultdict(float)
-    for e in db.list_entries(start_iso, end_iso):
-        if e.end_ts is None:
-            continue
+    entries = [e for e in db.list_entries(start_iso, end_iso) if e.end_ts is not None]
+    for e in entries:
         totals[e.category or "(uncategorized)"] += e.duration_seconds
     if config is not None:
+        entry_intervals = [Interval(e.start_ts, e.end_ts) for e in entries]
         for ev in db.list_calendar_events(
             start_iso, end_iso,
             excluded_color_ids=config.excluded_color_ids,
             excluded_event_types=config.excluded_event_types,
         ):
             if ev.category:
-                totals[ev.category] += (ev.end_ts - ev.start_ts).total_seconds()
+                totals[ev.category] += _seconds_minus(
+                    Interval(ev.start_ts, ev.end_ts), entry_intervals
+                )
     return dict(totals)
 
 
@@ -105,8 +111,13 @@ def day_summary(
         if e.end_ts is not None
     ]
 
-    meeting_seconds = _clipped_seconds(meetings, window)
+    # Entries win: a logged entry clips the meeting time it overlaps, so
+    # meetings + focus + idle partition the workday instead of overlapping.
     logged_seconds = _clipped_seconds(entries, window)
+    meeting_seconds = sum(
+        _seconds_minus(m, entries)
+        for m in _clip_to_window(meetings, window)
+    )
     gaps = find_gaps(window, meetings + entries, min_seconds=min_gap_minutes * 60)
     idle_seconds = sum(g.seconds for g in gaps)
 
@@ -173,3 +184,23 @@ def _clipped_seconds(intervals: list[Interval], window: Interval) -> float:
         if e > s:
             total += (e - s).total_seconds()
     return total
+
+
+def _clip_to_window(intervals: list[Interval], window: Interval) -> list[Interval]:
+    """Merged intervals clipped to ``window`` (drops anything fully outside)."""
+    out: list[Interval] = []
+    for span in merge_intervals(intervals):
+        s = max(span.start, window.start)
+        e = min(span.end, window.end)
+        if e > s:
+            out.append(Interval(s, e))
+    return out
+
+
+def _seconds_minus(base: Interval, minus: list[Interval]) -> float:
+    """Seconds of ``base`` not covered by any ``minus`` interval.
+
+    Reuses ``find_gaps`` (which merges + clips ``minus`` to ``base``) so the
+    'entries win over meetings' clipping shares one interval implementation.
+    """
+    return sum(g.seconds for g in find_gaps(base, minus, min_seconds=0))

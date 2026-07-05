@@ -39,6 +39,32 @@ def test_category_breakdown_folds_meeting_categories(db: Database):
     assert "Uncat" not in totals  # uncategorized meetings are not counted here
 
 
+def test_category_breakdown_entries_win_over_meetings(db: Database):
+    # A 1h meeting with a 30m entry logged over its second half.
+    db.upsert_calendar_event(CalendarEvent(
+        gcal_id="m", title="Stream", start_ts=at(10), end_ts=at(11),
+        color_id="7", category="Stream meetings", category_source="rule"))
+    backfill.fill_gap(db, at(10, 30), at(11), "did my own thing", category="Personal")
+    totals = reports.category_breakdown(
+        db, at(0).isoformat(), at(23).isoformat(), _cfg())
+    # Entry counts fully; meeting is clipped to the non-overlapping 30m.
+    assert totals["Personal"] == 1800
+    assert totals["Stream meetings"] == 1800  # not 3600
+
+
+def test_day_summary_entries_win_partitions_workday(db: Database):
+    workday.clock_in(db, ts=at(9))
+    workday.clock_out(db, ts=at(17))  # 8h
+    db.upsert_calendar_event(CalendarEvent(
+        gcal_id="m", title="Sync", start_ts=at(10), end_ts=at(12), color_id="7"))  # 2h
+    backfill.fill_gap(db, at(11), at(13), "focus over the meeting", category="dev")  # 2h, 1h overlaps
+    s = reports.day_summary(db, _cfg(), at(12))
+    # meeting clipped to 10-11 (1h); focus full 2h; the three partition the workday.
+    assert s.meeting_seconds == 3600
+    assert s.logged_seconds == 2 * 3600
+    assert s.meeting_seconds + s.logged_seconds + s.idle_seconds == s.workday_seconds
+
+
 def test_uncategorized_bucket(db: Database):
     backfill.fill_gap(db, at(9), at(10), "x")
     totals = reports.category_breakdown(db, at(0).isoformat(), at(23).isoformat())
