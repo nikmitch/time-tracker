@@ -85,7 +85,9 @@ def _pick_or_type(
     SKIP = "— skip —"
     if current is not None:
         return current or None
-    choices = _known_values(db, column) + [NEW, SKIP]
+    known = _known_values(db, column)
+    choices = [questionary.Choice(f"{i}: {v}", value=v) for i, v in enumerate(known)]
+    choices += [NEW, SKIP]
     chosen = questionary.select(prompt, choices=choices).ask()
     if chosen is None or chosen == SKIP:
         return None
@@ -308,8 +310,18 @@ def edit(
     if new_desc and new_desc.strip():
         entry.description = new_desc.strip()
 
-    # Category via pick list
-    entry.category, _ = _prompt_entry_fields(db, entry.category, "skip")
+    # Category via pick list (always prompts, unlike _prompt_entry_fields which
+    # short-circuits when a category is already set).
+    NEW, KEEP = "✏  New…", f"— keep '{entry.category or '(none)'}' —"
+    choices = _known_values(db, "category")
+    if entry.category and entry.category not in choices:
+        choices = [entry.category] + choices
+    chosen = questionary.select("Category:", choices=[KEEP] + choices + [NEW]).ask()
+    if chosen == NEW:
+        typed = questionary.text("Enter category:").ask()
+        entry.category = (typed or "").strip() or entry.category
+    elif chosen and chosen != KEEP:
+        entry.category = chosen
 
     db.update_entry(entry)
     console.print(f"[green]Updated[/green] {_local(entry.start_ts)}-{_local(entry.end_ts)} "
@@ -424,12 +436,18 @@ def log(
     start: str = typer.Argument(..., help="Start time: 'HH:MM' (today) or ISO."),
     end: str = typer.Argument(..., help="End time: 'HH:MM' (today) or ISO."),
     description: str = typer.Argument(None, help="What you were doing."),
+    category_num: int = typer.Argument(
+        None,
+        help="Category number (as shown in the picker: 0 = most-used, 1 = next, …).",
+    ),
     category: str = typer.Option(None, "--category", "-c"),
     date: str = typer.Option(None, "--date", help="ISO date for HH:MM times (default today)."),
 ):
-    """Retrospectively log a past block, e.g. `tt log 09:30 10:30 "wrote spec"`.
+    """Retrospectively log a past block, e.g. `tt log 09:30 10:30 "wrote spec" 0`.
 
-    Also works interactively — omit description/category and you'll be prompted.
+    The trailing number is optional and picks a category by its number in the
+    interactive pick list (most-used first). Also works interactively — omit
+    description/category and you'll be prompted.
     """
     db = get_db()
     base = _resolve_date(date)
@@ -439,6 +457,15 @@ def log(
         description = questionary.text("What were you working on?").ask()
         description = (description or "").strip() or None
     description = description or "unspecified"
+    if category is None and category_num is not None:
+        known = _known_values(db, "category")
+        if 0 <= category_num < len(known):
+            category = known[category_num]
+        else:
+            console.print(f"[red]No category #{category_num} — known categories:[/red]")
+            for i, v in enumerate(known):
+                console.print(f"  {i}: {v}")
+            raise typer.Exit(1)
     if category is None:
         category, _ = _prompt_entry_fields(db, None, "skip")
     try:
@@ -447,7 +474,8 @@ def log(
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
     console.print(f"[green]Logged[/green] {_local(start_ts)}-{_local(end_ts)} "
-                  f"({_fmt_dur(e.duration_seconds)}): {description}")
+                  f"({_fmt_dur(e.duration_seconds)}) "
+                  f"({category or 'uncategorized'}): {description}")
 
 
 @app.command()
