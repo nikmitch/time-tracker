@@ -96,17 +96,24 @@ def test_log_retrospective(env):
 
 
 def test_log_category_number(env):
-    runner.invoke(app, ["log", "08:00", "08:30", "seed", "-c", "admin"])
+    # 0 maps to the first pinned category regardless of DB contents.
     r = runner.invoke(app, ["log", "09:00", "09:30", "emails", "0"])
     assert r.exit_code == 0
-    assert "(admin)" in r.stdout
+    assert "(Admin)" in r.stdout
 
 
 def test_log_category_number_out_of_range(env):
-    runner.invoke(app, ["log", "08:00", "08:30", "seed", "-c", "admin"])
     r = runner.invoke(app, ["log", "09:00", "09:30", "emails", "42"])
     assert r.exit_code == 1
-    assert "0: admin" in r.stdout
+    assert "0: Admin" in r.stdout
+
+
+def test_unpinned_categories_appended_after_pinned(env):
+    from time_tracker.cli import CATEGORY_ORDER, _known_values, get_db
+    runner.invoke(app, ["log", "09:00", "10:00", "x", "-c", "zzz-new"])
+    known = _known_values(get_db(), "category")
+    assert known[: len(CATEGORY_ORDER)] == CATEGORY_ORDER
+    assert known[len(CATEGORY_ORDER)] == "zzz-new"
 
 
 def test_log_prints_category(env):

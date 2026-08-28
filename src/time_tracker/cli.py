@@ -62,13 +62,36 @@ def _resolve_date(date: str | None) -> datetime:
     return d.replace(tzinfo=timeutil.local_tz()) if d.tzinfo is None else d
 
 
+# Pinned category ordering (was most-used-first as of 2026-08-28). Numbers in
+# `tt log ... <n>` and the picker stay stable; categories not listed here are
+# appended after, most-used first.
+CATEGORY_ORDER = [
+    "Admin",
+    "Org work/projects",
+    "Work-related chats",
+    "Personal",
+    "Reading",
+    "Social",
+    "Fellow 1:1s",
+    "Non-fellow meetings",
+    "Team meetings",
+]
+
+
 def _known_values(db: Database, column: str) -> list[str]:
-    """Distinct non-null values for a column from time_entry, most-used first."""
+    """Distinct non-null values for a column from time_entry.
+
+    Categories follow the pinned CATEGORY_ORDER (unpinned ones appended,
+    most-used first); other columns are most-used first.
+    """
     rows = db.conn.execute(
         f"SELECT {column}, COUNT(*) c FROM time_entry "
         f"WHERE {column} IS NOT NULL GROUP BY {column} ORDER BY c DESC"
     ).fetchall()
-    return [r[column] for r in rows]
+    values = [r[column] for r in rows]
+    if column == "category":
+        return CATEGORY_ORDER + [v for v in values if v not in CATEGORY_ORDER]
+    return values
 
 
 def _is_interactive() -> bool:
