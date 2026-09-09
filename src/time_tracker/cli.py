@@ -100,23 +100,77 @@ def _is_interactive() -> bool:
     return sys.stdin.isatty()
 
 
+# Sentinels for the two non-value rows every pick list ends with.
+_NEW = object()
+_SKIP = object()
+
+
+def _shortcut_select(message: str, options: list[tuple[str | None, str, object]]):
+    """A pick list where pressing an option's key picks it — no Enter needed.
+
+    ``options`` are ``(key, title, value)``; a ``None`` key means the option is
+    reachable by arrow keys only. Arrow keys + Enter still work throughout.
+    questionary's own shortcuts only move the cursor, so we rebind each key to
+    answer immediately (a later binding wins over the one questionary added).
+    """
+    from questionary.prompts.common import InquirerControl
+
+    choices = [
+        questionary.Choice(title, value=value, shortcut_key=key)
+        for key, title, value in options
+    ]
+    # questionary only has 36 shortcut keys; past that, fall back to plain arrows.
+    if len(choices) > 36:
+        return questionary.select(message, choices=choices).ask()
+
+    question = questionary.select(
+        message, choices=choices, use_shortcuts=True, use_jk_keys=False
+    )
+    app_ = question.application
+    control = next(
+        (c for c in app_.layout.find_all_controls() if isinstance(c, InquirerControl)),
+        None,
+    )
+
+    def _answer_with(index, value):
+        def handler(event):
+            if control is not None:
+                # Move the cursor too, so the echoed answer names the right row.
+                control.pointed_at = index
+                control.is_answered = True
+            event.app.exit(result=value)
+        return handler
+
+    for index, (key, _title, value) in enumerate(options):
+        if key is not None:
+            app_.key_bindings.add(key, eager=True)(_answer_with(index, value))
+    return question.ask()
+
+
+def _value_options(
+    values: list[str], new_key: str = "n", skip_key: str = "s", skip_title: str = "— skip —"
+) -> list[tuple[str | None, str, object]]:
+    """Number each value by its index (0-9 get a key), plus New… and skip rows."""
+    options: list[tuple[str | None, str, object]] = [
+        (str(i) if i < 10 else None, v, v) for i, v in enumerate(values)
+    ]
+    options.append((new_key, "✏  New…", _NEW))
+    options.append((skip_key, skip_title, _SKIP))
+    return options
+
+
 def _pick_or_type(
     db: Database, prompt: str, column: str, current: str | None
 ) -> str | None:
-    """Pick an existing value for ``column`` (most-used first) or type a new one."""
-    NEW = "✏  New…"
-    SKIP = "— skip —"
+    """Pick an existing value for ``column`` by number/arrows, or type a new one."""
     if current is not None:
         return current or None
-    known = _known_values(db, column)
-    choices = [questionary.Choice(f"{i}: {v}", value=v) for i, v in enumerate(known)]
-    choices += [NEW, SKIP]
-    chosen = questionary.select(prompt, choices=choices).ask()
-    if chosen is None or chosen == SKIP:
+    chosen = _shortcut_select(prompt, _value_options(_known_values(db, column)))
+    if chosen is None or chosen is _SKIP:
         return None
-    if chosen == NEW:
+    if chosen is _NEW:
         typed = questionary.text(f"Enter {prompt.lower().rstrip(':')}:").ask()
-        return typed.strip() or None
+        return (typed or "").strip() or None
     return chosen
 
 
@@ -334,16 +388,19 @@ def edit(
         entry.description = new_desc.strip()
 
     # Category via pick list (always prompts, unlike _prompt_entry_fields which
-    # short-circuits when a category is already set).
-    NEW, KEEP = "✏  New…", f"— keep '{entry.category or '(none)'}' —"
-    choices = _known_values(db, "category")
-    if entry.category and entry.category not in choices:
-        choices = [entry.category] + choices
-    chosen = questionary.select("Category:", choices=[KEEP] + choices + [NEW]).ask()
-    if chosen == NEW:
+    # short-circuits when a category is already set). Numbers match the pinned
+    # ordering used everywhere else; "keep" sits last so it doesn't shift them.
+    known = _known_values(db, "category")
+    if entry.category and entry.category not in known:
+        known = known + [entry.category]
+    options = _value_options(
+        known, skip_key="s", skip_title=f"— keep '{entry.category or '(none)'}' —"
+    )
+    chosen = _shortcut_select("Category:", options)
+    if chosen is _NEW:
         typed = questionary.text("Enter category:").ask()
         entry.category = (typed or "").strip() or entry.category
-    elif chosen and chosen != KEEP:
+    elif chosen is not None and chosen is not _SKIP:
         entry.category = chosen
 
     db.update_entry(entry)
@@ -454,28 +511,105 @@ def meeting(
                   f"{category or '(uncategorized)'}")
 
 
+def _is_time(token: str, base: datetime) -> bool:
+    """True when ``token`` parses as an 'HH:MM' or ISO time."""
+    try:
+        _parse_when(token, base)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _split_log_args(
+    tokens: list[str], base: datetime
+) -> tuple[str | None, str, str | None, int | None]:
+    """Resolve `log`'s flexible positionals to (start, end, description, cat_num).
+
+    Accepts ``[START] END [DESCRIPTION] [CATEGORY_NUM]``. The start time is what
+    gets dropped: a second token that parses as a time means both times were
+    given, otherwise the single time is the END and the start is inferred.
+    """
+    tokens = list(tokens or [])
+    cat_num = None
+    if len(tokens) >= 2 and tokens[-1].isdigit():
+        cat_num = int(tokens.pop())
+    if not tokens:
+        raise ValueError("Give at least an end time, e.g. `tt log 10:30 \"wrote spec\"`.")
+    if not _is_time(tokens[0], base):
+        raise ValueError(f"'{tokens[0]}' is not a time — expected 'HH:MM' or ISO.")
+    if len(tokens) >= 2 and _is_time(tokens[1], base):
+        start, end, rest = tokens[0], tokens[1], tokens[2:]
+    else:
+        start, end, rest = None, tokens[0], tokens[1:]
+    if len(rest) > 1:
+        raise ValueError(
+            f"Too many arguments: {' '.join(repr(r) for r in rest)}. "
+            "Quote the description if it contains spaces."
+        )
+    return start, end, (rest[0] if rest else None), cat_num
+
+
+def _infer_start(db: Database, end_ts: datetime, config) -> datetime:
+    """The end of the last thing already on the timeline before ``end_ts``.
+
+    Considers both logged entries and (non-excluded) calendar meetings, so
+    coming straight out of a meeting picks up where the meeting ended. Limited
+    to ``end_ts``'s own local day to avoid silently spanning overnight.
+    """
+    day_start, _ = timeutil.local_day_bounds(end_ts.astimezone(timeutil.local_tz()))
+    ends = [
+        e.end_ts for e in db.list_entries(day_start.isoformat(), end_ts.isoformat())
+        if e.end_ts is not None and e.end_ts <= end_ts
+    ]
+    ends += [
+        ev.end_ts for ev in db.list_calendar_events(
+            day_start.isoformat(), end_ts.isoformat(),
+            excluded_color_ids=config.excluded_color_ids,
+            excluded_event_types=config.excluded_event_types,
+        )
+        if ev.end_ts is not None and ev.end_ts <= end_ts
+    ]
+    if not ends:
+        raise ValueError(
+            "Nothing logged earlier today to start from — give a start time too, "
+            'e.g. `tt log 09:30 10:30 "wrote spec"`.'
+        )
+    return max(ends)
+
+
 @app.command()
 def log(
-    start: str = typer.Argument(..., help="Start time: 'HH:MM' (today) or ISO."),
-    end: str = typer.Argument(..., help="End time: 'HH:MM' (today) or ISO."),
-    description: str = typer.Argument(None, help="What you were doing."),
-    category_num: int = typer.Argument(
-        None,
-        help="Category number (as shown in the picker: 0 = most-used, 1 = next, …).",
+    args: list[str] = typer.Argument(
+        None, help="[START] END [DESCRIPTION] [CATEGORY_NUM] — see the examples below."
     ),
     category: str = typer.Option(None, "--category", "-c"),
     date: str = typer.Option(None, "--date", help="ISO date for HH:MM times (default today)."),
 ):
-    """Retrospectively log a past block, e.g. `tt log 09:30 10:30 "wrote spec" 0`.
+    """Retrospectively log a past block.
 
-    The trailing number is optional and picks a category by its number in the
-    interactive pick list (most-used first). Also works interactively — omit
-    description/category and you'll be prompted.
+    \b
+    tt log 09:30 10:30 "spec"   explicit start and end
+    tt log 10:30 "spec"         start = end of the last thing on today's timeline
+    tt log 10:30 "spec" 3       ...in category 3 (numbered as in the picker)
+    tt log 10:30 3              ...with no description
+
+    Omit the description or category and you'll be prompted for them.
     """
     db = get_db()
     base = _resolve_date(date)
-    start_ts = _parse_when(start, base)
+    try:
+        start, end, description, category_num = _split_log_args(args, base)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
     end_ts = _parse_when(end, base)
+    try:
+        start_ts = _parse_when(start, base) if start else _infer_start(db, end_ts, load_config())
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    if start is None:
+        console.print(f"[dim]Start inferred as {_local(start_ts)}.[/dim]")
     if description is None and _is_interactive():
         description = questionary.text("What were you working on?").ask()
         description = (description or "").strip() or None

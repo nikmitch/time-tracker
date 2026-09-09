@@ -121,6 +121,78 @@ def test_log_prints_category(env):
     assert "(dev)" in r.stdout
 
 
+def test_log_infers_start_from_last_entry(env):
+    runner.invoke(app, ["log", "09:00", "10:00", "first", "-c", "dev"])
+    r = runner.invoke(app, ["log", "10:30", "second", "-c", "dev"])
+    assert r.exit_code == 0
+    assert "Start inferred as 10:00" in r.stdout
+    assert "10:00-10:30" in r.stdout
+
+
+def test_log_infers_start_with_category_number(env):
+    runner.invoke(app, ["log", "09:00", "10:00", "first", "-c", "dev"])
+    r = runner.invoke(app, ["log", "10:30", "second", "3"])
+    assert r.exit_code == 0
+    assert "(Personal)" in r.stdout
+    assert "10:00-10:30" in r.stdout
+
+
+def test_log_infers_start_without_description(env):
+    runner.invoke(app, ["log", "09:00", "10:00", "first", "-c", "dev"])
+    r = runner.invoke(app, ["log", "10:30", "3"])
+    assert r.exit_code == 0
+    assert "(Personal)" in r.stdout
+    assert "unspecified" in r.stdout
+
+
+def test_log_infers_start_from_last_meeting(env):
+    """A synced meeting counts as 'the last thing I had', not just entries."""
+    from time_tracker.cli import get_db, _resolve_date, _parse_when
+    from time_tracker.models import CalendarEvent
+    db = get_db()
+    base = _resolve_date(None)
+    runner.invoke(app, ["log", "09:00", "09:30", "first", "-c", "dev"])
+    db.upsert_calendar_event(CalendarEvent(
+        gcal_id="evt1", title="standup",
+        start_ts=_parse_when("09:30", base), end_ts=_parse_when("10:15", base),
+    ))
+    r = runner.invoke(app, ["log", "11:00", "after the meeting", "-c", "dev"])
+    assert r.exit_code == 0
+    assert "Start inferred as 10:15" in r.stdout
+
+
+def test_log_end_only_errors_when_nothing_earlier(env):
+    r = runner.invoke(app, ["log", "10:30", "nothing before this", "-c", "dev"])
+    assert r.exit_code == 1
+    assert "Nothing logged earlier today" in r.stdout
+
+
+def test_log_rejects_non_time_first_arg(env):
+    r = runner.invoke(app, ["log", "wrote spec"])
+    assert r.exit_code == 1
+    assert "not a time" in r.stdout
+
+
+def test_log_rejects_too_many_args(env):
+    r = runner.invoke(app, ["log", "09:00", "10:00", "wrote", "spec"])
+    assert r.exit_code == 1
+    assert "Too many arguments" in r.stdout
+
+
+def test_split_log_args_forms():
+    from time_tracker.cli import _split_log_args, _resolve_date
+    base = _resolve_date(None)
+    assert _split_log_args(["09:30", "10:30", "spec", "3"], base) == (
+        "09:30", "10:30", "spec", 3)
+    assert _split_log_args(["09:30", "10:30", "spec"], base) == (
+        "09:30", "10:30", "spec", None)
+    assert _split_log_args(["09:30", "10:30"], base) == ("09:30", "10:30", None, None)
+    assert _split_log_args(["10:30", "spec"], base) == (None, "10:30", "spec", None)
+    assert _split_log_args(["10:30", "spec", "3"], base) == (None, "10:30", "spec", 3)
+    assert _split_log_args(["10:30", "3"], base) == (None, "10:30", None, 3)
+    assert _split_log_args(["10:30"], base) == (None, "10:30", None, None)
+
+
 def test_log_rejects_overlap(env):
     runner.invoke(app, ["log", "09:00", "10:00", "a"])
     r = runner.invoke(app, ["log", "09:30", "10:30", "b"])

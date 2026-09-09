@@ -49,6 +49,7 @@ single daily timeline you can review and report on.
 <ul class="toc">
   <li><a href="#anywhere">Does it work from anywhere?</a></li>
   <li><a href="#commands">Command reference</a></li>
+  <li><a href="#numbers">Categories by number</a></li>
   <li><a href="#workflow">A typical day (workflow)</a></li>
   <li><a href="#capture">The three ways to capture time</a></li>
   <li><a href="#editing">Editing and deleting entries</a></li>
@@ -76,7 +77,7 @@ Your data is stored centrally (see <a href="#data">Where your data lives</a>), s
 <tr><td><code>tt start</code></td><td>Start a live timer. With no flags, prompts interactively for category and description (shows your existing values as a pick list). Flags: <code>-c</code> category, <code>-d</code> description, <code>--at HH:MM</code> to backdate the start. Errors immediately if a timer is already running.</td></tr>
 <tr><td><code>tt stop</code></td><td>Stop the running timer and log the elapsed span.</td></tr>
 <tr><td><code>tt checkin</code></td><td>Log what you've been doing since your last activity. With no args, prompts for description and category. Or: <code>tt checkin "emails" -c admin</code>.</td></tr>
-<tr><td><code>tt log START END</code></td><td>Retrospectively log a past block at any time of day, e.g. <code>tt log 09:30 10:30 "wrote spec"</code> at 3pm. Times are <code>HH:MM</code> local (or full ISO). Omit description/category to be prompted. <code>--date 2026-06-26</code> for another day.</td></tr>
+<tr><td><code>tt log [START] END [DESC] [CAT]</code></td><td>Retrospectively log a past block at any time of day, e.g. <code>tt log 09:30 10:30 "wrote spec"</code> at 3pm. Times are <code>HH:MM</code> local (or full ISO). <strong>Drop the start time</strong> and it picks up where the last thing on today's timeline ended — entry or meeting — so logging the day in sequence is just <code>tt log 10:30 "wrote spec"</code>, then <code>tt log 11:15 "code review"</code>. A trailing <strong>number</strong> sets the category by its number in the pick list (see <em>Categories by number</em> below), e.g. <code>tt log 10:30 "wrote spec" 3</code>. Omit description/category to be prompted. <code>--date 2026-06-26</code> for another day.</td></tr>
 <tr><td><code>tt edit [--date]</code></td><td>Pick a logged entry from today (or <code>--date</code>) and edit its start, end, description, or category interactively.</td></tr>
 <tr><td><code>tt delete [--date]</code></td><td>Pick a logged entry and delete it after confirmation.</td></tr>
 <tr><td><code>tt recat OLD [NEW]</code></td><td>Recategorize entries. <code>tt recat "MATS chats" "MATS workplace"</code> bulk-renames every entry. With just <code>tt recat "MATS chats"</code>, pick which of that category's entries to move elsewhere — e.g. splitting "fellows" out of a broader chat category.</td></tr>
@@ -94,6 +95,38 @@ Your data is stored centrally (see <a href="#data">Where your data lives</a>), s
 There are also terse aliases for the commands you type most: <code>td</code> → <code>tt day</code>, <code>tl</code> → <code>tt log</code>, <code>ci</code> → <code>tt checkin</code>, <code>rc</code> → <code>tt recat</code>.
 </div>
 
+<h2 id="numbers">Categories by number</h2>
+<p>Every category has a fixed number, and you can use it two ways:
+<strong>press the number</strong> in any category pick list to choose it instantly
+(no arrow keys, no Enter), or <strong>type it at the end</strong> of a
+<code>tt log</code> command. Arrow keys and Enter still work if you'd rather browse.</p>
+
+<div class="card">
+<pre><code>? Category: (Use shortcuts or arrow keys)
+ » 0) Admin
+   1) Org work/projects
+   2) Work-related chats
+   3) Personal
+   4) Reading
+   5) Social
+   6) Fellow 1:1s
+   7) Non-fellow meetings
+   8) Team meetings
+   n) ✏  New…
+   s) — skip —</code></pre>
+</div>
+
+<p>So <code>tt log 10:30 "called the bank" 3</code> logs it as Personal without any
+prompt at all. <code>n</code> creates a new category and <code>s</code> leaves it
+uncategorized.</p>
+
+<div class="note"><strong>The numbers are fixed, not usage-ranked.</strong> They come from
+the <code>CATEGORY_ORDER</code> list in <code>src/time_tracker/cli.py</code>, pinned so that
+<code>3</code> always means the same thing and the shortcuts stay in your fingers. Categories
+you add later appear after the pinned ones (most-used first) and get whatever number is
+next free; to give a new one a permanent number, add it to that list. Only the first ten
+get a number — anything beyond is arrow-keys-only.</div>
+
 <h2 id="workflow">A typical day</h2>
 <div class="card">
 <pre><code># Morning — when you actually sit down (before any meetings)
@@ -103,7 +136,7 @@ tt in
 tt sync
 
 # Starting a focused block — tt start with no flags prompts you interactively.
-# Arrow keys to pick a category from your history (or "New…" to create one).
+# Press a category's number to pick it (or arrow keys; "n" to create one).
 tt start
 # ...work...
 tt stop
@@ -113,6 +146,12 @@ tt start -c dev -p tracker -d "refactor sync logic"
 
 # Came back from a meeting / a scattered hour — log it after the fact
 tt checkin "answered emails, reviewed two PRs"
+
+# Reconstructing a stretch afterwards: give just the END time and the category
+# number, and each block starts where the previous one finished.
+tt log 10:30 "wrote spec" 1
+tt log 11:15 "reviewed two PRs" 2
+tt log 12:00 "called the bank" 3
 
 # Glance at the day so far — what's tracked, what's an open gap
 tt day
@@ -131,7 +170,7 @@ day, meetings come in automatically, and you fill the gaps with whichever captur
 <tr><th>Mode</th><th>Use when…</th><th>How</th></tr>
 <tr><td><strong>Live timer</strong></td><td>You're starting a focused block and want an accurate measure.</td><td><code>tt start …</code> then <code>tt stop</code></td></tr>
 <tr><td><strong>Check-in</strong></td><td>You forgot to start a timer, or want quick periodic sampling. Logs from your last activity to now.</td><td><code>tt checkin "what you did"</code></td></tr>
-<tr><td><strong>Retrospective log</strong></td><td>Reconstructing the day afterwards. Look at the gaps in <code>tt day</code> and fill them in.</td><td><code>tt log 09:30 10:30 "deep work"</code></td></tr>
+<tr><td><strong>Retrospective log</strong></td><td>Reconstructing the day afterwards. Look at the gaps in <code>tt day</code> and fill them in. Drop the start time to continue from the last block.</td><td><code>tt log 09:30 10:30 "deep work"</code><br><code>tt log 11:00 "deep work" 1</code></td></tr>
 </table>
 
 <h2 id="editing">Editing and deleting entries</h2>
