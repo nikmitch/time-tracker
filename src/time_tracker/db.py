@@ -9,7 +9,7 @@ from __future__ import annotations
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterable, Iterator, Optional
 
 from .models import (
     CalendarEvent,
@@ -271,6 +271,35 @@ class Database:
             ).fetchone()
             event.id = row["id"]
         return event
+
+    def prune_calendar_events(
+        self, start: str, end: str, keep_gcal_ids: Iterable[str]
+    ) -> list[CalendarEvent]:
+        """Delete cached meetings starting in [start, end) that Google dropped.
+
+        Google stops returning an event once it's cancelled or moved, so any
+        cached row in a freshly-synced window that wasn't returned is stale —
+        without this, moved meetings linger forever beside their new time and
+        get counted twice. Bounded by ``start_ts`` so an event that merely
+        overlaps the window (and so may legitimately be absent) is left alone.
+
+        Returns the deleted events so the caller can report them. Time entries
+        that referenced one keep their logged time — the foreign key is
+        ON DELETE SET NULL, and the pragma enabling it is set on connect.
+        """
+        keep = set(keep_gcal_ids)
+        rows = self.conn.execute(
+            "SELECT * FROM calendar_event WHERE start_ts >= ? AND start_ts < ?",
+            (start, end),
+        ).fetchall()
+        stale = [_row_to_event(r) for r in rows if r["gcal_id"] not in keep]
+        if stale:
+            with self._tx() as conn:
+                conn.executemany(
+                    "DELETE FROM calendar_event WHERE id = ?",
+                    [(e.id,) for e in stale],
+                )
+        return stale
 
     def list_calendar_events(
         self,

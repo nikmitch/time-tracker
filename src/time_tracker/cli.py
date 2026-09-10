@@ -279,8 +279,19 @@ def clock_out():
 
 
 @app.command()
-def sync(days: int = typer.Option(7, help="Days forward/back to sync.")):
-    """Sync meetings from Google Calendar."""
+def sync(
+    days: int = typer.Option(7, help="Days forward/back to sync."),
+    prune: bool = typer.Option(
+        True, "--prune/--no-prune",
+        help="Remove cached meetings Google no longer returns (cancelled/moved).",
+    ),
+):
+    """Sync meetings from Google Calendar.
+
+    Reconciles both ways: new and changed meetings are pulled in, and meetings
+    that have since been cancelled or moved are dropped from the local cache so
+    they stop showing up in `tt day` and counting toward reports.
+    """
     db = get_db()
     config = load_config()
     try:
@@ -290,10 +301,23 @@ def sync(days: int = typer.Option(7, help="Days forward/back to sync.")):
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
     now = datetime.now(timezone.utc)
-    n = gcal.sync_calendar(db, service, now - timedelta(days=days),
-                           now + timedelta(days=days),
-                           category_rules=config.meeting_category_rules)
-    console.print(f"[green]Synced[/green] {n} events.")
+    result = gcal.sync_calendar(db, service, now - timedelta(days=days),
+                                now + timedelta(days=days),
+                                category_rules=config.meeting_category_rules,
+                                prune=prune)
+    console.print(f"[green]Synced[/green] {result.synced} events.")
+    if result.pruned:
+        console.print(
+            f"[yellow]Removed[/yellow] {len(result.pruned)} stale "
+            f"{'meeting' if len(result.pruned) == 1 else 'meetings'} "
+            "no longer on your calendar:"
+        )
+        for ev in sorted(result.pruned, key=lambda e: e.start_ts):
+            manual = " [dim](had a manual category)[/dim]" if ev.category_source == "manual" else ""
+            console.print(
+                f"  {timeutil.local_date_key(ev.start_ts)} "
+                f"{_local(ev.start_ts)}-{_local(ev.end_ts)}  {ev.title}{manual}"
+            )
 
 
 @app.command()

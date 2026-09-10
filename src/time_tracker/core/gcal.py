@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional, Protocol
+from typing import Any, NamedTuple, Optional, Protocol
 
 from ..db import Database
-from ..models import CalendarEvent, utcnow
+from ..models import CalendarEvent, to_iso, utcnow
 
 SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 CONFIG_DIR = Path.home() / ".time_tracker"
@@ -123,6 +123,13 @@ def fetch_events(
     return raw
 
 
+class SyncResult(NamedTuple):
+    """What a sync did: how many events it wrote, and what it removed."""
+
+    synced: int
+    pruned: list[CalendarEvent]
+
+
 def sync_calendar(
     db: Database,
     service: CalendarService,
@@ -130,12 +137,19 @@ def sync_calendar(
     time_max: Optional[datetime] = None,
     calendar_id: str = "primary",
     category_rules: Optional[list[dict]] = None,
-) -> int:
-    """Pull events into the local cache (idempotent). Returns count synced.
+    prune: bool = True,
+) -> SyncResult:
+    """Reconcile the local cache with Google for the given window.
 
     Cancelled events (status == "cancelled") are skipped. When ``category_rules``
     are given, a rule-derived category is attached to each event; the DB layer
     preserves any manual override so re-syncs never clobber a user's edit.
+
+    With ``prune`` (the default), cached meetings in the window that Google no
+    longer returns are deleted, so cancelled and moved meetings actually go away
+    instead of lingering beside their replacement. As a safety net, a window
+    that comes back completely empty prunes nothing: a legitimately empty week
+    is rare, while wrongly emptying one would silently delete real meetings.
     """
     from .categorize import categorize_meeting
 
@@ -144,6 +158,7 @@ def sync_calendar(
     time_min = time_min or (now - timedelta(days=7))
     time_max = time_max or (now + timedelta(days=7))
     count = 0
+    seen: set[str] = set()
     for raw in fetch_events(service, time_min, time_max, calendar_id):
         if raw.get("status") == "cancelled":
             continue
@@ -157,5 +172,11 @@ def sync_calendar(
             event.category = cat
             event.category_source = "rule"
         db.upsert_calendar_event(event)
+        seen.add(event.gcal_id)
         count += 1
-    return count
+    pruned: list[CalendarEvent] = []
+    if prune and seen:
+        pruned = db.prune_calendar_events(
+            to_iso(time_min), to_iso(time_max), seen
+        )
+    return SyncResult(count, pruned)

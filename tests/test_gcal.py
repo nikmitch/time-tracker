@@ -80,7 +80,7 @@ def test_sync_inserts_events(db: Database):
     pages = [{"items": [_timed_event("a", 9, 10), _timed_event("b", 11, 12)]}]
     n = gcal.sync_calendar(db, FakeService(pages),
                            time_min=datetime(2026, 6, 28, tzinfo=UTC),
-                           time_max=datetime(2026, 6, 29, tzinfo=UTC))
+                           time_max=datetime(2026, 6, 29, tzinfo=UTC)).synced
     assert n == 2
     assert len(db.list_calendar_events()) == 2
 
@@ -100,7 +100,7 @@ def test_sync_skips_cancelled(db: Database):
     pages = [{"items": [ev, _timed_event("ok", 11, 12)]}]
     n = gcal.sync_calendar(db, FakeService(pages),
                            time_min=datetime(2026, 6, 28, tzinfo=UTC),
-                           time_max=datetime(2026, 6, 29, tzinfo=UTC))
+                           time_max=datetime(2026, 6, 29, tzinfo=UTC)).synced
     assert n == 1
 
 
@@ -155,3 +155,74 @@ def test_fetch_follows_pagination(db: Database):
                             datetime(2026, 6, 28, tzinfo=UTC),
                             datetime(2026, 6, 29, tzinfo=UTC))
     assert [r["id"] for r in raw] == ["a", "b"]
+
+
+# ----- reconciliation: meetings Google no longer returns ------------------
+
+WINDOW = dict(time_min=datetime(2026, 6, 28, tzinfo=UTC),
+              time_max=datetime(2026, 6, 29, tzinfo=UTC))
+
+
+def test_sync_prunes_cancelled_meeting(db: Database):
+    gcal.sync_calendar(db, FakeService([{"items": [_timed_event("a", 9, 10),
+                                                   _timed_event("b", 11, 12)]}]), **WINDOW)
+    # "b" disappears from Google (cancelled).
+    result = gcal.sync_calendar(db, FakeService([{"items": [_timed_event("a", 9, 10)]}]), **WINDOW)
+    assert [e.gcal_id for e in result.pruned] == ["b"]
+    assert [e.gcal_id for e in db.list_calendar_events()] == ["a"]
+
+
+def test_sync_prunes_the_old_slot_when_a_meeting_moves(db: Database):
+    """The real bug: a moved meeting must not linger beside its new time."""
+    gcal.sync_calendar(db, FakeService([{"items": [_timed_event("fred_1130", 11, 12)]}]), **WINDOW)
+    result = gcal.sync_calendar(
+        db, FakeService([{"items": [_timed_event("fred_1515", 15, 16)]}]), **WINDOW)
+    assert [e.gcal_id for e in result.pruned] == ["fred_1130"]
+    assert [e.gcal_id for e in db.list_calendar_events()] == ["fred_1515"]
+
+
+def test_prune_leaves_events_outside_the_window_alone(db: Database):
+    """Syncing one day must not delete meetings cached for other days."""
+    gcal.sync_calendar(db, FakeService([{"items": [_timed_event("a", 9, 10)]}]), **WINDOW)
+    other = dict(time_min=datetime(2026, 7, 5, tzinfo=UTC),
+                 time_max=datetime(2026, 7, 6, tzinfo=UTC))
+    july = _timed_event("july", 9, 10)
+    july["start"] = {"dateTime": "2026-07-05T09:00:00+00:00"}
+    july["end"] = {"dateTime": "2026-07-05T10:00:00+00:00"}
+    result = gcal.sync_calendar(db, FakeService([{"items": [july]}]), **other)
+    assert result.pruned == []
+    assert {e.gcal_id for e in db.list_calendar_events()} == {"a", "july"}
+
+
+def test_empty_window_prunes_nothing(db: Database):
+    """A window that comes back empty must not wipe real cached meetings."""
+    gcal.sync_calendar(db, FakeService([{"items": [_timed_event("a", 9, 10)]}]), **WINDOW)
+    result = gcal.sync_calendar(db, FakeService([{"items": []}]), **WINDOW)
+    assert result.pruned == []
+    assert len(db.list_calendar_events()) == 1
+
+
+def test_no_prune_flag_keeps_stale_rows(db: Database):
+    gcal.sync_calendar(db, FakeService([{"items": [_timed_event("a", 9, 10),
+                                                   _timed_event("b", 11, 12)]}]), **WINDOW)
+    result = gcal.sync_calendar(
+        db, FakeService([{"items": [_timed_event("a", 9, 10)]}]), prune=False, **WINDOW)
+    assert result.pruned == []
+    assert len(db.list_calendar_events()) == 2
+
+
+def test_pruning_keeps_the_logged_time_entry(db: Database):
+    """Deleting a meeting must never delete time you logged against it."""
+    from time_tracker.models import Source, TimeEntry
+    gcal.sync_calendar(db, FakeService([{"items": [_timed_event("a", 9, 10)]}]), **WINDOW)
+    ev = db.list_calendar_events()[0]
+    entry = db.create_entry(TimeEntry(
+        start_ts=datetime(2026, 6, 28, 9, tzinfo=UTC),
+        end_ts=datetime(2026, 6, 28, 10, tzinfo=UTC),
+        description="that meeting", source=Source.BACKFILL,
+        calendar_event_id=ev.id,
+    ))
+    gcal.sync_calendar(db, FakeService([{"items": [_timed_event("z", 13, 14)]}]), **WINDOW)
+    kept = db.get_entry(entry.id)
+    assert kept is not None and kept.description == "that meeting"
+    assert kept.calendar_event_id is None  # link cleared, time preserved
