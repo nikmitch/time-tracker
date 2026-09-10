@@ -555,11 +555,15 @@ def _infer_start(db: Database, end_ts: datetime, config) -> datetime:
     Considers both logged entries and (non-excluded) calendar meetings, so
     coming straight out of a meeting picks up where the meeting ended. Limited
     to ``end_ts``'s own local day to avoid silently spanning overnight.
+
+    Anchors must end *strictly* before ``end_ts``: something ending exactly at
+    the requested end leaves no gap to fill, so using it would only ever yield
+    a zero-length entry.
     """
     day_start, _ = timeutil.local_day_bounds(end_ts.astimezone(timeutil.local_tz()))
     ends = [
         e.end_ts for e in db.list_entries(day_start.isoformat(), end_ts.isoformat())
-        if e.end_ts is not None and e.end_ts <= end_ts
+        if e.end_ts is not None and e.end_ts < end_ts
     ]
     ends += [
         ev.end_ts for ev in db.list_calendar_events(
@@ -567,7 +571,7 @@ def _infer_start(db: Database, end_ts: datetime, config) -> datetime:
             excluded_color_ids=config.excluded_color_ids,
             excluded_event_types=config.excluded_event_types,
         )
-        if ev.end_ts is not None and ev.end_ts <= end_ts
+        if ev.end_ts is not None and ev.end_ts < end_ts
     ]
     if not ends:
         raise ValueError(

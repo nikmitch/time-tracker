@@ -161,6 +161,23 @@ def test_log_infers_start_from_last_meeting(env):
     assert "Start inferred as 10:15" in r.stdout
 
 
+def test_log_end_only_skips_anchor_ending_exactly_at_end(env):
+    """A meeting ending exactly at END leaves no gap — anchor further back."""
+    from time_tracker.cli import get_db, _resolve_date, _parse_when
+    from time_tracker.models import CalendarEvent
+    db = get_db()
+    base = _resolve_date(None)
+    runner.invoke(app, ["log", "11:30", "12:00", "admin", "-c", "dev"])
+    db.upsert_calendar_event(CalendarEvent(
+        gcal_id="fred", title="Nik / Fred",
+        start_ts=_parse_when("11:30", base), end_ts=_parse_when("12:15", base),
+    ))
+    r = runner.invoke(app, ["log", "12:15", "chats with Katie", "-c", "dev"])
+    assert r.exit_code == 0
+    assert "Start inferred as 12:00" in r.stdout
+    assert "12:00-12:15" in r.stdout
+
+
 def test_log_end_only_errors_when_nothing_earlier(env):
     r = runner.invoke(app, ["log", "10:30", "nothing before this", "-c", "dev"])
     assert r.exit_code == 1
