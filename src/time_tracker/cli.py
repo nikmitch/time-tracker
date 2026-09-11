@@ -544,27 +544,31 @@ def _is_time(token: str, base: datetime) -> bool:
         return False
 
 
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def _split_log_args(
     tokens: list[str], base: datetime
-) -> tuple[str | None, str, str | None, int | None]:
+) -> tuple[str | None, str | None, str | None, int | None]:
     """Resolve `log`'s flexible positionals to (start, end, description, cat_num).
 
-    Accepts ``[START] END [DESCRIPTION] [CATEGORY_NUM]``. The start time is what
-    gets dropped: a second token that parses as a time means both times were
-    given, otherwise the single time is the END and the start is inferred.
+    Accepts ``[[START] END] [DESCRIPTION] [CATEGORY_NUM]``. Times are dropped
+    from the front: two leading times are START and END, one is END (start
+    inferred), none means END is now. A bare integer last is always the
+    category number, never a description.
     """
     tokens = list(tokens or [])
     cat_num = None
-    if len(tokens) >= 2 and tokens[-1].isdigit():
+    if tokens and tokens[-1].isdigit():
         cat_num = int(tokens.pop())
-    if not tokens:
-        raise ValueError("Give at least an end time, e.g. `tt log 10:30 \"wrote spec\"`.")
-    if not _is_time(tokens[0], base):
-        raise ValueError(f"'{tokens[0]}' is not a time — expected 'HH:MM' or ISO.")
-    if len(tokens) >= 2 and _is_time(tokens[1], base):
-        start, end, rest = tokens[0], tokens[1], tokens[2:]
+    if tokens and _is_time(tokens[0], base):
+        if len(tokens) >= 2 and _is_time(tokens[1], base):
+            start, end, rest = tokens[0], tokens[1], tokens[2:]
+        else:
+            start, end, rest = None, tokens[0], tokens[1:]
     else:
-        start, end, rest = None, tokens[0], tokens[1:]
+        start, end, rest = None, None, tokens
     if len(rest) > 1:
         raise ValueError(
             f"Too many arguments: {' '.join(repr(r) for r in rest)}. "
@@ -618,8 +622,10 @@ def log(
     \b
     tt log 09:30 10:30 "spec"   explicit start and end
     tt log 10:30 "spec"         start = end of the last thing on today's timeline
-    tt log 10:30 "spec" 3       ...in category 3 (numbered as in the picker)
-    tt log 10:30 3              ...with no description
+    tt log "spec"               ...and end = now
+    tt log "spec" 3             ...in category 3 (numbered as in the picker)
+    tt log 3                    ...with no description (you'll be prompted)
+    tt log                      fully interactive, ending now
 
     Omit the description or category and you'll be prompted for them.
     """
@@ -630,7 +636,14 @@ def log(
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
-    end_ts = _parse_when(end, base)
+    if end is None:
+        if date:
+            console.print("[red]--date needs explicit times — 'now' is only today.[/red]")
+            raise typer.Exit(1)
+        end_ts = _now()
+        console.print(f"[dim]End set to now ({_local(end_ts)}).[/dim]")
+    else:
+        end_ts = _parse_when(end, base)
     try:
         start_ts = _parse_when(start, base) if start else _infer_start(db, end_ts, load_config())
     except ValueError as exc:

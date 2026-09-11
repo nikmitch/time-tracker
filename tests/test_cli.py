@@ -184,10 +184,44 @@ def test_log_end_only_errors_when_nothing_earlier(env):
     assert "Nothing logged earlier today" in r.stdout
 
 
-def test_log_rejects_non_time_first_arg(env):
-    r = runner.invoke(app, ["log", "wrote spec"])
+@pytest.fixture
+def now_1100(monkeypatch):
+    """Freeze `tt log`'s notion of now at 11:00 local today."""
+    import time_tracker.cli as cli
+    frozen = cli._parse_when("11:00", cli._resolve_date(None))
+    monkeypatch.setattr(cli, "_now", lambda: frozen)
+    return frozen
+
+
+def test_log_no_times_ends_now(env, now_1100):
+    runner.invoke(app, ["log", "09:00", "10:00", "first", "-c", "dev"])
+    r = runner.invoke(app, ["log", "wrote spec", "-c", "dev"])
+    assert r.exit_code == 0
+    assert "End set to now (11:00)" in r.stdout
+    assert "Start inferred as 10:00" in r.stdout
+    assert "10:00-11:00" in r.stdout
+
+
+def test_log_no_times_with_category_number(env, now_1100):
+    runner.invoke(app, ["log", "09:00", "10:00", "first", "-c", "dev"])
+    r = runner.invoke(app, ["log", "wrote spec", "3"])
+    assert r.exit_code == 0
+    assert "10:00-11:00" in r.stdout
+    assert "(Personal)" in r.stdout
+
+
+def test_log_only_category_number(env, now_1100):
+    runner.invoke(app, ["log", "09:00", "10:00", "first", "-c", "dev"])
+    r = runner.invoke(app, ["log", "3"])
+    assert r.exit_code == 0
+    assert "(Personal)" in r.stdout
+    assert "unspecified" in r.stdout
+
+
+def test_log_no_times_with_date_errors(env, now_1100):
+    r = runner.invoke(app, ["log", "spec", "--date", "yesterday"])
     assert r.exit_code == 1
-    assert "not a time" in r.stdout
+    assert "--date needs explicit times" in r.stdout
 
 
 def test_log_rejects_too_many_args(env):
@@ -208,6 +242,10 @@ def test_split_log_args_forms():
     assert _split_log_args(["10:30", "spec", "3"], base) == (None, "10:30", "spec", 3)
     assert _split_log_args(["10:30", "3"], base) == (None, "10:30", None, 3)
     assert _split_log_args(["10:30"], base) == (None, "10:30", None, None)
+    assert _split_log_args(["spec"], base) == (None, None, "spec", None)
+    assert _split_log_args(["spec", "3"], base) == (None, None, "spec", 3)
+    assert _split_log_args(["3"], base) == (None, None, None, 3)
+    assert _split_log_args([], base) == (None, None, None, None)
 
 
 def test_log_rejects_overlap(env):
