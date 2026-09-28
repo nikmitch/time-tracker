@@ -1,7 +1,6 @@
 # Time Tracker
 
-Personal work-time tracking & analysis. CLI-first, designed so a web/phone
-front-end can be added later over the same core.
+Work-time tracking & analysis through the CLI.
 
 Meetings (from Google Calendar) are the fixed scaffold; the tool helps you
 track and understand **the gaps between them**.
@@ -20,12 +19,3 @@ conda activate time_tracker
 pip install -e ".[dev]"
 pytest
 ```
-
-## Status
-
-- [x] Phase 1 — Core & storage (SQLite, models, config)
-- [x] Phase 2 — Capture (timer / check-in / backfill)
-- [x] Phase 3 — Calendar sync
-- [x] Phase 4 — Workday & reminders
-- [x] Phase 5 — CLI front-end
-- [x] Phase 6 — Analysis
